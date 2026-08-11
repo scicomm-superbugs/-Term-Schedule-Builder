@@ -29,162 +29,159 @@ const DAY_COLORS = {
   'Friday':    { bg: '#c6d9f1', textColor: '#1f4e78', accent: '#1f4e78' }
 };
 
-// ─── Firebase Realtime Multi-Device Sync Engine ──────────────────────────────
-const firebaseConfig = {
+// ─── Firebase Multi-Device Cloud Sync Engine ─────────────────────────────────
+// Auth App (chompchem) — for Google Sign-In only
+const firebaseAuthConfig = {
   apiKey: "AIzaSyAPrfR-hG-5CeZiD0EIz_P1r93ywZbxcjc",
   authDomain: "chompchem.firebaseapp.com",
   projectId: "chompchem",
   storageBucket: "chompchem.firebasestorage.app",
   messagingSenderId: "379599502348",
   appId: "1:379599502348:web:d1be32d868ac2a813f0229",
-  measurementId: "G-NWEXYL1PQ0",
-  databaseURL: "https://chompchem-default-rtdb.firebaseio.com"
+  measurementId: "G-NWEXYL1PQ0"
 };
 
-let db = null;
-let fsDb = null;
+// Database App (student-tracker-72760) — for Realtime Data Sync (open rules, proven working)
+const firebaseDbConfig = {
+  apiKey: "AIzaSyDXn7Z9PkCR1EfKB_QeZ_J-Dz7uyJFSBUc",
+  authDomain: "student-tracker-72760.firebaseapp.com",
+  databaseURL: "https://student-tracker-72760-default-rtdb.firebaseio.com",
+  projectId: "student-tracker-72760",
+  storageBucket: "student-tracker-72760.firebasestorage.app",
+  messagingSenderId: "917137194155",
+  appId: "1:917137194155:web:fbca38b56445fd9a9b8bee",
+  measurementId: "G-HG58PQ2678"
+};
+
+let db = null;           // Realtime Database reference (student-tracker-72760)
+let authApp = null;      // Auth app (chompchem)
 let isRemoteSyncUpdate = false;
 
 function initFirebase() {
-  if (typeof firebase !== 'undefined') {
-    try {
-      if (!firebase.apps.length) {
-        firebase.initializeApp(firebaseConfig);
-      }
-      if (firebase.database) db = firebase.database();
-      if (firebase.firestore) fsDb = firebase.firestore();
+  if (typeof firebase === 'undefined') return;
 
-      if (firebase.auth) {
-        firebase.auth().onAuthStateChanged((user) => {
-          if (user) {
-            if (user.email) {
-              console.log("Firebase Auth State Changed:", user.email);
-              processGoogleUserAuth(user.email, user.displayName || user.email);
-            }
-          } else {
-            // Auto sign-in anonymously to guarantee cloud read/write permissions for all devices!
-            firebase.auth().signInAnonymously().catch(err => console.warn("Anon auth notice:", err));
-          }
-        });
+  try {
+    // 1. Initialize Auth app (chompchem) — used for Google Sign-In
+    authApp = firebase.initializeApp(firebaseAuthConfig, 'authApp');
 
-        firebase.auth().getRedirectResult().then((result) => {
-          if (result && result.user && result.user.email) {
-            processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
-          }
-        }).catch((err) => {
-          console.warn("Google Auth redirect result notice:", err);
-        });
-      }
+    // 2. Initialize Database app (student-tracker-72760) — used for data sync
+    const dbApp = firebase.initializeApp(firebaseDbConfig, 'dbApp');
+    db = firebase.database(dbApp);
 
-      setupRealtimeSyncListeners();
-      fetchCloudScheduleData();
-    } catch(e) {
-      console.warn("Firebase Sync Notice:", e);
+    console.log('✓ Firebase Auth (chompchem) initialized');
+    console.log('✓ Firebase Database (student-tracker) initialized');
+
+    // Handle Google Auth via the Auth app
+    if (firebase.auth) {
+      const auth = firebase.auth(authApp);
+
+      auth.onAuthStateChanged((user) => {
+        if (user && user.email) {
+          console.log("Firebase Auth State Changed:", user.email);
+          processGoogleUserAuth(user.email, user.displayName || user.email);
+        }
+      });
+
+      auth.getRedirectResult().then((result) => {
+        if (result && result.user && result.user.email) {
+          processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
+        }
+      }).catch((err) => {
+        console.warn("Google Auth redirect result notice:", err);
+      });
     }
+
+    // 3. Setup realtime listeners & fetch cloud data
+    setupRealtimeSyncListeners();
+    fetchCloudScheduleData();
+
+  } catch(e) {
+    console.warn("Firebase Init Notice:", e);
   }
 }
 
+// ─── Fetch Cloud Schedule on Page Load ───────────────────────────────────────
 function fetchCloudScheduleData() {
-  if (fsDb) {
-    fsDb.collection('term_schedules').doc('active').get().then((docSnap) => {
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data && Array.isArray(data.scheduleData) && data.scheduleData.length >= 0) {
-          scheduleData = data.scheduleData;
-          localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-          renderGrid();
-          updateStats();
-        }
+  if (!db) return;
+
+  db.ref('term_schedule/scheduleData').once('value').then((snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val) && val.length > 0) {
+      console.log('✓ Cloud schedule loaded:', val.length, 'entries');
+      isRemoteSyncUpdate = true;
+      scheduleData = val;
+      localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+      renderGrid();
+      updateStats();
+      isRemoteSyncUpdate = false;
+    } else {
+      console.log('ℹ No cloud schedule data found, uploading local data...');
+      // If cloud is empty but we have local data, push local data to cloud
+      if (scheduleData.length > 0) {
+        db.ref('term_schedule/scheduleData').set(scheduleData)
+          .then(() => console.log('✓ Local data pushed to cloud'))
+          .catch(err => console.warn('Cloud push failed:', err));
       }
-    }).catch(err => console.warn("Cloud fetch notice:", err));
-  }
-  if (db) {
-    db.ref('term_schedule/scheduleData').get().then((snapshot) => {
-      const val = snapshot.val();
-      if (val && Array.isArray(val) && val.length >= 0) {
-        scheduleData = val;
-        localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-        renderGrid();
-        updateStats();
-      }
-    }).catch(err => console.warn("RTDB fetch notice:", err));
-  }
+    }
+  }).catch(err => console.warn("Cloud fetch notice:", err));
+
+  // Also fetch users from cloud
+  db.ref('term_schedule/users').once('value').then((snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val)) {
+      localStorage.setItem('term_sched_users', JSON.stringify(val));
+    }
+  }).catch(err => console.warn("Cloud users fetch notice:", err));
 }
 
+// ─── Realtime Sync Listeners (Live Cross-Device Broadcasting) ────────────────
 function setupRealtimeSyncListeners() {
-  // 1. Realtime Database Listeners
-  if (db) {
-    db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
-      const val = snapshot.val();
-      if (val && Array.isArray(val)) {
-        isRemoteSyncUpdate = true;
-        scheduleData = val;
-        localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-        renderGrid();
-        updateStats();
-        isRemoteSyncUpdate = false;
-      }
-    });
+  if (!db) return;
 
-    db.ref('term_schedule/users').on('value', (snapshot) => {
-      const val = snapshot.val();
-      if (val && Array.isArray(val)) {
-        localStorage.setItem('term_sched_users', JSON.stringify(val));
-        if (currentUser) {
-          const selfInDb = val.find(u => u.username && u.username.toLowerCase() === currentUser.username.toLowerCase());
-          if (selfInDb) {
-            currentUser.approved = selfInDb.approved;
-            currentUser.role = selfInDb.role;
-            localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
-          }
-        }
-        updateAuthHeaderUI();
-      }
-    });
+  // 1. Schedule Data — live sync across all devices
+  db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val)) {
+      isRemoteSyncUpdate = true;
+      scheduleData = val;
+      localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+      renderGrid();
+      updateStats();
+      isRemoteSyncUpdate = false;
+      console.log('⚡ Live sync: schedule updated from cloud (' + val.length + ' entries)');
+    }
+  }, (err) => console.warn("RTDB schedule listener error:", err));
 
-    db.ref('term_schedule/activityLogs').on('value', (snapshot) => {
-      const val = snapshot.val();
-      if (val && Array.isArray(val)) {
-        localStorage.setItem('term_sched_activity_logs', JSON.stringify(val));
-      }
-    });
-  }
-
-  // 2. Cloud Firestore Realtime Listeners (Dual Cloud Sync across all devices)
-  if (fsDb) {
-    fsDb.collection('term_schedules').doc('active').onSnapshot((docSnap) => {
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data && Array.isArray(data.scheduleData)) {
-          isRemoteSyncUpdate = true;
-          scheduleData = data.scheduleData;
-          localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-          renderGrid();
-          updateStats();
-          isRemoteSyncUpdate = false;
+  // 2. Users — live sync across all devices
+  db.ref('term_schedule/users').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val)) {
+      localStorage.setItem('term_sched_users', JSON.stringify(val));
+      if (currentUser) {
+        const selfInDb = val.find(u => u.username && u.username.toLowerCase() === currentUser.username.toLowerCase());
+        if (selfInDb) {
+          currentUser.approved = selfInDb.approved;
+          currentUser.role = selfInDb.role;
+          localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
         }
       }
-    }, (err) => console.warn("Firestore schedule listener notice:", err));
+      updateAuthHeaderUI();
+    }
+  }, (err) => console.warn("RTDB users listener error:", err));
 
-    fsDb.collection('term_schedules').doc('users').onSnapshot((docSnap) => {
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data && Array.isArray(data.users)) {
-          localStorage.setItem('term_sched_users', JSON.stringify(data.users));
-          updateAuthHeaderUI();
-        }
-      }
-    }, (err) => console.warn("Firestore users listener notice:", err));
-  }
+  // 3. Activity Logs — live sync across all devices
+  db.ref('term_schedule/activityLogs').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val)) {
+      localStorage.setItem('term_sched_activity_logs', JSON.stringify(val));
+    }
+  }, (err) => console.warn("RTDB logs listener error:", err));
 }
 
 function syncUsersToFirebase(users) {
   localStorage.setItem('term_sched_users', JSON.stringify(users));
   if (db) {
     db.ref('term_schedule/users').set(users);
-  }
-  if (fsDb) {
-    fsDb.collection('term_schedules').doc('users').set({ users: users }, { merge: true });
   }
 }
 
@@ -450,27 +447,28 @@ function signOutUser() {
   if (currentUser) {
     logActivity('🚪 Signed Out', `User ${currentUser.name} signed out`, '🚪');
   }
-  if (typeof firebase !== 'undefined' && firebase.auth) {
-    try { firebase.auth().signOut(); } catch(e) {}
+  if (typeof firebase !== 'undefined' && firebase.auth && authApp) {
+    try { firebase.auth(authApp).signOut(); } catch(e) {}
   }
   currentUser = null;
   localStorage.removeItem('term_sched_current_user');
   window.location.reload();
 }
 
-// ─── Google Account Authentication (Pure Firebase Auth) ────────────────────────
+// ─── Google Account Authentication (Pure Firebase Auth via chompchem) ────────
 function signInWithGoogle() {
-  if (typeof firebase === 'undefined' || !firebase.auth) {
+  if (typeof firebase === 'undefined' || !firebase.auth || !authApp) {
     showToast('Firebase Auth is initializing. Please try again.', 'error');
     return;
   }
 
   try {
+    const auth = firebase.auth(authApp);
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.addScope('email');
     provider.addScope('profile');
 
-    firebase.auth().signInWithPopup(provider).then((result) => {
+    auth.signInWithPopup(provider).then((result) => {
       if (result && result.user) {
         processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
       }
@@ -478,7 +476,7 @@ function signInWithGoogle() {
       console.warn("Firebase Google Auth notice:", err);
       if (err.code === 'auth/popup-blocked') {
         showToast('Opening Google Sign-In via redirect...', 'info');
-        firebase.auth().signInWithRedirect(provider);
+        auth.signInWithRedirect(provider);
       } else if (err.code !== 'auth/popup-closed-by-user') {
         showToast(`Google Sign-In notice: ${err.message}`, 'error');
       }
@@ -2184,17 +2182,10 @@ function showToast(message, type = 'info') {
 function saveData() {
   try {
     localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-    if (!isRemoteSyncUpdate) {
-      if (db) {
-        db.ref('term_schedule/scheduleData').set(scheduleData);
-      }
-      if (fsDb) {
-        fsDb.collection('term_schedules').doc('active').set({
-          scheduleData: scheduleData,
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser ? currentUser.name : 'Anonymous'
-        }, { merge: true });
-      }
+    if (!isRemoteSyncUpdate && db) {
+      db.ref('term_schedule/scheduleData').set(scheduleData)
+        .then(() => console.log('✓ Schedule synced to cloud'))
+        .catch(err => console.warn('Cloud sync failed:', err));
     }
   }
   catch (e) { console.warn('Save failed:', e); }
