@@ -466,11 +466,11 @@ body {
 }
 
 .sched-th-time {
-  min-width: 54px;
-  width: 54px;
-  padding: 8px 1px;
+  min-width: 58px;
+  width: 58px;
+  padding: 8px 2px;
   text-align: center;
-  font-size: 0.63rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: #1a1d26;
   border-right: 1px solid #000000 !important;
