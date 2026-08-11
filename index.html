@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Term Schedule Builder | AIU</title>
+
+  <!-- SEO -->
+  <meta name="description" content="Build and manage your university term timetable. Import SIS data, add lectures, labs, and tutorials visually." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- ═══════ Header ═══════ -->
+    <header class="header">
+      <div class="header-left">
+        <span class="logo-icon">📅</span>
+        <h1>Term Schedule Builder</h1>
+        <span class="header-badge">SIS</span>
+      </div>
+      <div class="header-actions">
+        <button class="btn" id="btn-import" title="Import SIS CSV Data">
+          <span>📂</span> Import SIS
+        </button>
+        <button class="btn" id="btn-export" title="Export SIS Excel Sheet">
+          <span>📥</span> Export SIS Excel
+        </button>
+        <button class="btn btn-success" id="btn-export-visual" title="Export Visual Schedule Grid as Excel Sheet with colors & formatting">
+          <span>📊</span> Export Visual Excel
+        </button>
+        <button class="btn" id="btn-activity-log" title="View Users Activity & Change Log">
+          <span>📋</span> Activity Log
+        </button>
+        <button class="btn" id="btn-import-schedule" title="Import Timetable State File (.json or .csv)">
+          <span>📁</span> Import Schedule
+        </button>
+        <button class="btn btn-primary" id="btn-add" title="Add Entry">
+          <span>＋</span> Add Entry
+        </button>
+        <button class="btn btn-danger" id="btn-clear" title="Clear All Entries">
+          <span>🗑️</span> Clear
+        </button>
+        <div id="auth-header-container" style="display:flex; align-items:center; margin-left:4px;"></div>
+      </div>
+    </header>
+
+    <!-- ═══════ Stats Bar ═══════ -->
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-icon purple">📊</div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-entries">0</span>
+          <span class="stat-label">Total Entries</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon green">📚</div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-courses">0</span>
+          <span class="stat-label">Courses</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon blue">🎓</div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-lectures">0</span>
+          <span class="stat-label">Lectures</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon red">🔬</div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-labs">0</span>
+          <span class="stat-label">Labs</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon amber">📝</div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-tutorials">0</span>
+          <span class="stat-label">Tutorials</span>
+        </div>
+      </div>
+      <div class="stat-card" id="stat-card-conflicts">
+        <div class="stat-icon red">⚠️</div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-conflicts">0</span>
+          <span class="stat-label">Conflicts</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ Legend ═══════ -->
+    <div class="legend-bar">
+      <div class="legend-left">
+        <div class="legend-section">
+          <span class="legend-section-title">Type:</span>
+          <div class="legend-item"><div class="legend-dot lecture"></div><span>Lecture</span></div>
+          <div class="legend-item"><div class="legend-dot lab"></div><span>Lab</span></div>
+          <div class="legend-item"><div class="legend-dot tutorial"></div><span>Tutorial</span></div>
+        </div>
+        <div class="legend-divider"></div>
+        <div class="legend-section">
+          <span class="legend-section-title">Programs:</span>
+          <div class="legend-item"><div class="legend-dot" style="background:#475569;"></div><span>General</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:#15803d;"></div><span>Mol. Biotech</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:#d97706;"></div><span>Ind. Chemistry</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:#1d4ed8;"></div><span>Sust. Renewable</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:#7e22ce;"></div><span>Engineering</span></div>
+        </div>
+      </div>
+      <div class="legend-credit">
+        Designed &amp; Programmed with <span style="color:#ef4444;">❤️</span> by <strong>Abdullah Amr Maged</strong>
+      </div>
+    </div>
+
+    <!-- ═══════ Schedule Grid ═══════ -->
+    <div class="schedule-container">
+      <div class="schedule-scroll" id="schedule-scroll">
+        <div class="schedule-grid" id="schedule-grid">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MODAL: Add / Edit Entry
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="modal-entry" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-entry-title">Add Schedule Entry</h2>
+        <button class="modal-close" id="btn-close-entry">×</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="entry-form" autocomplete="off">
+          <div class="form-grid">
+
+            <!-- Course Code -->
+            <div class="form-group">
+              <label class="form-label" for="field-course-code">Course Code</label>
+              <input class="form-input" type="text" id="field-course-code" placeholder="e.g. PHY111" required />
+            </div>
+
+            <!-- Course Name -->
+            <div class="form-group">
+              <label class="form-label" for="field-course-name">Course Name</label>
+              <input class="form-input" type="text" id="field-course-name" placeholder="e.g. Physics I" required />
+            </div>
+
+            <!-- Type Selector -->
+            <div class="form-group full-width">
+              <label class="form-label">Entry Type</label>
+              <div class="type-selector" id="type-selector">
+                <button type="button" class="type-option active lecture-type" data-type="lecture">🎓 Lecture</button>
+                <button type="button" class="type-option lab-type" data-type="lab">🔬 Lab</button>
+                <button type="button" class="type-option tutorial-type" data-type="tutorial">📝 Tutorial</button>
+              </div>
+            </div>
+
+            <!-- Group Number (Lecture) -->
+            <div class="form-group" id="group-lecture-wrap">
+              <label class="form-label" for="field-lecture-group">Lecture Group #</label>
+              <input class="form-input" type="number" id="field-lecture-group" min="1" max="20" value="1" />
+            </div>
+
+            <!-- Group Number (Lab/Tutorial) -->
+            <div class="form-group hidden" id="group-parent-wrap">
+              <label class="form-label" for="field-parent-group">Parent Lecture Group</label>
+              <input class="form-input" type="number" id="field-parent-group" min="1" max="20" value="1" />
+            </div>
+
+            <div class="form-group hidden" id="group-sub-wrap">
+              <label class="form-label">Sub-Group</label>
+              <div class="sub-group-selector" id="sub-group-selector">
+                <button type="button" class="sub-group-btn active" data-sub="A">A</button>
+                <button type="button" class="sub-group-btn" data-sub="B">B</button>
+              </div>
+            </div>
+
+            <!-- Component Preview -->
+            <div class="form-group full-width">
+              <label class="form-label">Generated Component Code</label>
+              <div class="component-preview">
+                <span class="code" id="component-preview-code">L1S</span>
+                <span class="label" id="component-preview-label">→ Lecture Group 1</span>
+              </div>
+            </div>
+
+            <!-- Level -->
+            <div class="form-group">
+              <label class="form-label" for="field-level">Level</label>
+              <input class="form-input" type="number" id="field-level" min="0" max="10" value="1" />
+            </div>
+
+            <!-- Program -->
+            <div class="form-group">
+              <label class="form-label" for="field-program">Program</label>
+              <select class="form-select" id="field-program">
+                <option value="general">General</option>
+                <option value="biotech">Molecular Biotechnology</option>
+                <option value="chemistry">Industrial Chemistry</option>
+                <option value="renewable">Sustainable and Renewable Energy</option>
+                <option value="engineering">Engineering</option>
+              </select>
+            </div>
+
+            <!-- Association -->
+            <div class="form-group">
+              <label class="form-label" for="field-association">Association</label>
+              <input class="form-input" type="number" id="field-association" min="1" max="99" value="1" />
+            </div>
+
+            <!-- Class No (Optional) -->
+            <div class="form-group">
+              <label class="form-label" for="field-class-no">Class No (Optional)</label>
+              <input class="form-input" type="text" id="field-class-no" placeholder="e.g. 1117" />
+            </div>
+
+            <!-- Day -->
+            <div class="form-group">
+              <label class="form-label" for="field-day">Day</label>
+              <select class="form-select" id="field-day" required>
+                <option value="Saturday">Saturday</option>
+                <option value="Sunday">Sunday</option>
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+              </select>
+            </div>
+
+            <!-- Facility ID (Lab / Lecture Room) -->
+            <div class="form-group">
+              <label class="form-label" for="field-facility" id="label-facility">Facility ID (Room)</label>
+              <input class="form-input" type="text" id="field-facility" placeholder="e.g. B11-3042" />
+            </div>
+
+            <!-- Tutorial Room (Optional) -->
+            <div class="form-group" id="group-facility-tut-wrap">
+              <label class="form-label" for="field-facility-tut" id="label-facility-tut">Tutorial Room (Optional)</label>
+              <input class="form-input" type="text" id="field-facility-tut" placeholder="e.g. B8-2092" />
+            </div>
+
+            <!-- Start Time -->
+            <div class="form-group">
+              <label class="form-label" for="field-start-time">Start Time</label>
+              <input class="form-input" type="time" id="field-start-time" value="09:00" required />
+            </div>
+
+            <!-- End Time -->
+            <div class="form-group">
+              <label class="form-label" for="field-end-time">End Time</label>
+              <input class="form-input" type="time" id="field-end-time" value="10:45" required />
+            </div>
+
+            <!-- Capacity -->
+            <div class="form-group">
+              <label class="form-label" for="field-capacity">Capacity</label>
+              <input class="form-input" type="number" id="field-capacity" min="1" max="1000" value="100" />
+            </div>
+
+            <!-- Custom Block Color -->
+            <div class="form-group">
+              <label class="form-label" for="field-custom-color">Custom Fill Color</label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input class="form-input-color" type="color" id="field-custom-color" value="#95b3d7" style="width:42px; height:38px; padding:2px; border-radius:6px; cursor:pointer; border:1px solid var(--border-light);" />
+                <label style="font-size:0.75rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:4px; color:var(--text-secondary);">
+                  <input type="checkbox" id="field-use-custom-color" /> Enable Custom Color
+                </label>
+              </div>
+            </div>
+
+            <!-- Instructors Section -->
+            <div class="form-group full-width" id="instructors-section">
+              <div class="form-section-header">
+                <label class="form-label">Instructors</label>
+                <button type="button" class="btn btn-sm" id="btn-add-instructor" style="font-size:0.72rem;padding:3px 10px;">
+                  <span>＋</span> Add Instructor
+                </button>
+              </div>
+              <div id="instructors-container" class="instructors-container">
+                <div class="instructor-input-row">
+                  <span class="instructor-num-badge">1</span>
+                  <input class="form-input instructor-field" type="text" placeholder="Primary Instructor (e.g. Prof. Dr. Mohammed Slalem)" />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn" id="btn-cancel-entry">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-entry">
+          <span>💾</span> Save Entry
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MODAL: Import SIS CSV
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="modal-import" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Import SIS Excel Sheet</h2>
+        <button class="modal-close" id="btn-close-import">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="dropzone" id="dropzone">
+          <div class="dropzone-icon">📊</div>
+          <p class="dropzone-title">Click or Drag CSV File Here</p>
+          <p class="dropzone-sub">Supports .csv files exported from the SIS system</p>
+          <input type="file" id="file-input" accept=".csv,.txt" />
+        </div>
+
+        <p style="font-size: 0.76rem; color: var(--text-muted); text-align: center; margin-bottom: 6px;">
+          Expected columns: <strong>LEVEL</strong>, <strong>Course code</strong>, <strong>Course name</strong>,
+          <strong>Component</strong>, <strong>Association</strong>, <strong>Facility ID</strong>,
+          <strong>Mtg Start</strong>, <strong>Mtg End</strong>, <strong>Day</strong>,
+          <strong>Capacity</strong>, <strong>Instructor 1</strong>
+        </p>
+
+        <!-- Import Preview -->
+        <div id="import-preview" class="import-preview hidden"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn" id="btn-cancel-import">Cancel</button>
+        <button class="btn btn-success hidden" id="btn-confirm-import">
+          <span>✅</span> Import All
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MODAL: Confirm Clear
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="modal-confirm" class="modal-overlay">
+    <div class="modal" style="max-width: 420px;">
+      <div class="modal-header">
+        <h2>Confirm Action</h2>
+        <button class="modal-close" id="btn-close-confirm">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="confirm-content">
+          <div class="warn-icon">⚠️</div>
+          <p class="warn-msg" id="confirm-message">Are you sure?</p>
+          <p>This action cannot be undone.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btn-cancel-confirm">Cancel</button>
+        <button class="btn btn-danger" id="btn-do-confirm">
+          <span>🗑️</span> Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MODAL: Activity Log
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="modal-activity-log" class="modal-overlay">
+    <div class="modal" style="max-width:750px;">
+      <div class="modal-header">
+        <h2>📋 User Activity & Audit Log</h2>
+        <button class="modal-close" id="btn-close-activity">×</button>
+      </div>
+      <div class="modal-body" style="padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <span style="font-size:0.8rem; color:var(--text-secondary);" id="activity-count-label">0 activity log(s) recorded</span>
+          <button class="btn btn-sm btn-danger" onclick="clearActivityLogs()" style="font-size:0.72rem;">🗑️ Clear Logs</button>
+        </div>
+        <div style="max-height:380px; overflow-y:auto; border:1px solid var(--border-light); border-radius:8px;">
+          <table class="import-table" style="width:100%;">
+            <thead>
+              <tr>
+                <th style="width:130px;">Time</th>
+                <th style="width:150px;">User</th>
+                <th style="width:140px;">Action</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="activity-log-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btn-close-activity-footer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MODAL: Authentication / User Account
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="modal-auth" class="modal-overlay">
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header">
+        <h2 id="auth-modal-title">🔐 Sign In to Schedule Builder</h2>
+        <button class="modal-close" id="btn-close-auth">×</button>
+      </div>
+      <div class="modal-body" style="padding:20px;">
+        <div class="type-selector" style="margin-bottom:16px;">
+          <button type="button" class="type-option active" id="auth-tab-signin" onclick="switchAuthTab('signin')">Sign In</button>
+          <button type="button" class="type-option" id="auth-tab-register" onclick="switchAuthTab('register')">Register Account</button>
+        </div>
+
+        <form id="auth-form" autocomplete="off">
+          <div class="form-group hidden" id="auth-group-name">
+            <label class="form-label" for="auth-name">Full Name</label>
+            <input class="form-input" type="text" id="auth-name" placeholder="e.g. Dr. Abdullah Amr" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="auth-email">Email Address</label>
+            <input class="form-input" type="email" id="auth-email" placeholder="name@aiu.edu.eg" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="auth-password">Password</label>
+            <input class="form-input" type="password" id="auth-password" placeholder="••••••••" required />
+          </div>
+          <div class="form-group hidden" id="auth-group-role">
+            <label class="form-label" for="auth-role">Account Role</label>
+            <select class="form-select" id="auth-role">
+              <option value="Scheduler / Admin">Scheduler / Admin</option>
+              <option value="Faculty Professor">Faculty Professor</option>
+              <option value="Teaching Assistant">Teaching Assistant</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" id="btn-auth-submit" style="width:100%; margin-top:12px;">Sign In</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ Entry Detail Popup (rendered dynamically) ═══════ -->
+  <div id="entry-popup" class="entry-popup hidden"></div>
+
+  <!-- ═══════ Toast Container ═══════ -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
