@@ -323,50 +323,44 @@ function openAuthModal(tab = 'signin') {
 function switchAuthTab(tab) {
   currentAuthTab = tab;
   const isRegister = tab === 'register';
-  const tabSignin = document.getElementById('auth-tab-signin');
-  const tabRegister = document.getElementById('auth-tab-register');
-  if (tabSignin) tabSignin.classList.toggle('active', !isRegister);
-  if (tabRegister) tabRegister.classList.toggle('active', isRegister);
   
-  const gName = document.getElementById('auth-group-name');
-  const gUser = document.getElementById('auth-group-username');
-  const noticeMsg = document.getElementById('auth-notice-msg');
+  const groupEmail = document.getElementById('group-auth-email');
+  if (groupEmail) groupEmail.classList.toggle('hidden', !isRegister);
 
-  if (gName) gName.classList.toggle('hidden', !isRegister);
-  if (gUser) gUser.classList.toggle('hidden', !isRegister);
-  if (noticeMsg) noticeMsg.style.display = isRegister ? 'block' : 'none';
-
-  const emailLabel = document.getElementById('auth-email-label');
-  if (emailLabel) emailLabel.textContent = isRegister ? 'Email Address' : 'Username or Email';
-
-  const emailInput = document.getElementById('auth-email');
-  if (emailInput) {
-    emailInput.placeholder = isRegister ? 'Example@aiu.edu.eg' : 'Salem123 or Example@aiu.edu.eg';
-  }
+  const lblUser = document.getElementById('lbl-auth-user');
+  if (lblUser) lblUser.textContent = isRegister ? 'Desired Username' : 'Username or Email';
 
   const modalTitle = document.getElementById('auth-modal-title');
-  if (modalTitle) modalTitle.textContent = isRegister ? '📝 Register New Account' : '🔐 Sign In to Schedule Builder';
+  if (modalTitle) modalTitle.textContent = isRegister ? '📝 Create New Account' : '🔑 Sign In to Term Schedule';
+  
   const btnSubmit = document.getElementById('btn-auth-submit');
-  if (btnSubmit) btnSubmit.textContent = isRegister ? 'Register Account' : 'Sign In';
+  if (btnSubmit) btnSubmit.textContent = isRegister ? 'Create Account' : 'Sign In';
+
+  const prompt = document.getElementById('auth-toggle-prompt');
+  if (prompt) prompt.textContent = isRegister ? 'Already have an account?' : "Don't have an account?";
+
+  const link = document.getElementById('auth-toggle-link');
+  if (link) link.textContent = isRegister ? 'Sign In' : 'Sign Up';
 }
 
 function handleAuthSubmit(e) {
   e.preventDefault();
-  const inputEmailOrUser = document.getElementById('auth-email').value.trim().toLowerCase();
-  const password = document.getElementById('auth-password').value.trim();
+  const inputEmailOrUser = (document.getElementById('auth-username')?.value || '').trim().toLowerCase();
+  const emailVal = (document.getElementById('auth-email')?.value || '').trim().toLowerCase();
+  const password = (document.getElementById('auth-password')?.value || '').trim();
 
   const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
 
   if (currentAuthTab === 'register') {
-    const name = document.getElementById('auth-name').value.trim();
-    const username = document.getElementById('auth-username').value.trim().toLowerCase();
+    const username = inputEmailOrUser;
+    const name = username;
 
-    if (!name || !username || !inputEmailOrUser || !password) {
+    if (!username || !password) {
       showToast('Please fill all required fields', 'error');
       return;
     }
 
-    const existing = users.find(u => (u.username && u.username.toLowerCase() === username) || (u.email && u.email.toLowerCase() === inputEmailOrUser));
+    const existing = users.find(u => (u.username && u.username.toLowerCase() === username) || (u.email && u.email.toLowerCase() === emailVal));
     if (existing) {
       showToast('An account with this username or email already exists', 'error');
       return;
@@ -375,7 +369,7 @@ function handleAuthSubmit(e) {
     const newUser = {
       name,
       username,
-      email: inputEmailOrUser,
+      email: emailVal || `${username}@aiu.edu.eg`,
       role: 'User',
       password,
       approved: false, // REQUIRES ADMIN APPROVAL!
@@ -2582,6 +2576,18 @@ function initEventListeners() {
 
   const btnCloseAuth = document.getElementById('btn-close-auth');
   if (btnCloseAuth) btnCloseAuth.addEventListener('click', () => closeModal('modal-auth'));
+
+  const btnGoogle = document.getElementById('btn-google-auth');
+  if (btnGoogle) btnGoogle.addEventListener('click', signInWithGoogle);
+
+  const authToggleLink = document.getElementById('auth-toggle-link');
+  if (authToggleLink) {
+    authToggleLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isRegistering = currentAuthTab === 'register';
+      openAuthModal(isRegistering ? 'signin' : 'register');
+    });
+  }
 
   const btnCloseAdminUsers = document.getElementById('btn-close-admin-users');
   if (btnCloseAdminUsers) btnCloseAdminUsers.addEventListener('click', () => closeModal('modal-admin-users'));
