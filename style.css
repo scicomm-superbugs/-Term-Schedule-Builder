@@ -456,7 +456,7 @@ body {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-right: 2px solid #000000 !important;
+  border-right: 3.5px solid #000000 !important;
   border-bottom: 2px solid #000000 !important;
   position: sticky;
   left: 80px;
@@ -479,17 +479,22 @@ body {
   background: #d9d9d9 !important;
 }
 
-.sched-th-time.on-hour {
-  border-right: 2px solid #000000 !important;
+.sched-th-time.on-hour,
+.sched-th-time.hour-end {
+  border-right: 3.5px solid #000000 !important;
   color: #000000;
   font-weight: 800;
   background: #d9d9d9 !important;
 }
 
+.sched-th-time.hour-start {
+  border-left: 3.5px solid #000000 !important;
+}
+
 .sched-th-end {
   min-width: 58px;
   width: 58px;
-  border-right: none;
+  border-right: 3.5px solid #000000 !important;
   border-bottom: 2px solid #000000 !important;
   font-size: 0.68rem;
   font-weight: 800;
@@ -500,7 +505,7 @@ body {
 .sched-end-cell {
   width: 58px;
   min-width: 58px;
-  border-right: none;
+  border-right: 3.5px solid #000000 !important;
   border-bottom: 2px solid #000000 !important;
   background: transparent;
 }
@@ -537,7 +542,7 @@ body {
   font-size: 0.7rem;
   padding: 4px 6px;
   text-align: center;
-  border-right: 2px solid #000000 !important;
+  border-right: 3.5px solid #000000 !important;
   border-bottom: 1.5px solid #000000 !important;
   vertical-align: middle;
   white-space: nowrap;
@@ -562,8 +567,21 @@ body {
   height: 50px;
 }
 
-.sched-empty.on-hour {
-  border-right: 2px solid #000000 !important;
+.sched-empty.on-hour,
+.sched-empty.hour-end {
+  border-right: 3.5px solid #000000 !important;
+}
+
+.sched-empty.hour-start {
+  border-left: 3.5px solid #000000 !important;
+}
+
+.sched-entry-cell.hour-end {
+  border-right: 3.5px solid #000000 !important;
+}
+
+.sched-entry-cell.hour-start {
+  border-left: 3.5px solid #000000 !important;
 }
 
 /* ── Entry Cell (course block) ─────────────────────────────────────────── */

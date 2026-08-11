@@ -996,7 +996,8 @@ function renderGrid() {
   slots.forEach((slot) => {
     const th = document.createElement('th');
     th.className = 'sched-th-time';
-    if (slot.start % 60 === 0) th.classList.add('on-hour');
+    if (slot.start % 60 === 0) th.classList.add('hour-start');
+    if ((slot.start + 15) % 60 === 0) th.classList.add('hour-end');
     th.textContent = formatSlotLabel(slot.start);
     trHead.appendChild(th);
   });
@@ -1043,7 +1044,8 @@ function renderGrid() {
       slots.forEach((slot) => {
         const td = document.createElement('td');
         td.className = 'sched-empty';
-        if (slot.start % 60 === 0) td.classList.add('on-hour');
+        if (slot.start % 60 === 0) td.classList.add('hour-start');
+        if ((slot.start + 15) % 60 === 0) td.classList.add('hour-end');
         tr.appendChild(td);
       });
       const tdEnd = document.createElement('td');
@@ -1109,6 +1111,8 @@ function renderGrid() {
               td.colSpan = span;
               const entryType = entry.entryType || parseComponent(entry.component).type;
               td.className = `sched-entry-cell ${entryType}`;
+              if (entry.startMinutes % 60 === 0) td.classList.add('hour-start');
+              if (entry.endMinutes % 60 === 0) td.classList.add('hour-end');
               td.dataset.id = entry.id;
 
               if (entry.customColor) {
@@ -1190,7 +1194,8 @@ function renderGrid() {
             } else {
               const td = document.createElement('td');
               td.className = 'sched-empty';
-              if (slots[i].start % 60 === 0) td.classList.add('on-hour');
+              if (slots[i].start % 60 === 0) td.classList.add('hour-start');
+              if ((slots[i].start + 15) % 60 === 0) td.classList.add('hour-end');
               tr.appendChild(td);
               i++;
             }
