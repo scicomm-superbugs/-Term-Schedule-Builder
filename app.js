@@ -31,7 +31,14 @@ const DAY_COLORS = {
 
 // ─── Firebase Realtime Multi-Device Sync Engine ──────────────────────────────
 const firebaseConfig = {
-  databaseURL: "https://term-schedule-builder-default-rtdb.europe-west1.firebasedatabase.app"
+  apiKey: "AIzaSyAPrfR-hG-5CeZiD0EIz_P1r93ywZbxcjc",
+  authDomain: "chompchem.firebaseapp.com",
+  projectId: "chompchem",
+  storageBucket: "chompchem.firebasestorage.app",
+  messagingSenderId: "379599502348",
+  appId: "1:379599502348:web:d1be32d868ac2a813f0229",
+  measurementId: "G-NWEXYL1PQ0",
+  databaseURL: "https://chompchem-default-rtdb.firebaseio.com"
 };
 
 let db = null;
@@ -44,6 +51,18 @@ function initFirebase() {
         firebase.initializeApp(firebaseConfig);
       }
       db = firebase.database();
+
+      // Check Google Auth redirect result on page load
+      if (firebase.auth) {
+        firebase.auth().getRedirectResult().then((result) => {
+          if (result && result.user) {
+            processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
+          }
+        }).catch((err) => {
+          console.warn("Google Auth redirect result notice:", err);
+        });
+      }
+
       setupRealtimeSyncListeners();
     } catch(e) {
       console.warn("Firebase Realtime Sync Notice:", e);
@@ -364,15 +383,23 @@ function signInWithGoogle() {
   if (typeof firebase !== 'undefined' && firebase.auth) {
     try {
       const provider = new firebase.auth.GoogleAuthProvider();
+      provider.addScope('email');
+      provider.addScope('profile');
+
       firebase.auth().signInWithPopup(provider).then((result) => {
         if (result && result.user) {
-          processGoogleUserAuth(result.user.email, result.user.displayName);
+          processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
         } else {
           promptGoogleAuthFallback();
         }
       }).catch((err) => {
-        console.warn("Google Auth popup error/blocked:", err);
-        promptGoogleAuthFallback();
+        console.warn("Google Auth popup notice:", err);
+        if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+          showToast('Opening Google Sign-In redirect...', 'info');
+          firebase.auth().signInWithRedirect(provider);
+        } else {
+          promptGoogleAuthFallback();
+        }
       });
     } catch(e) {
       console.warn("Google Auth exception:", e);
