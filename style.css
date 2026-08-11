@@ -464,11 +464,11 @@ body {
 }
 
 .sched-th-time {
-  min-width: 52px;
-  width: 52px;
+  min-width: 58px;
+  width: 58px;
   padding: 8px 2px;
   text-align: center;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: #1a1d26;
   border-right: 1px solid #c0c4cc;
@@ -484,17 +484,18 @@ body {
 }
 
 .sched-th-end {
-  min-width: 45px;
-  width: 45px;
+  min-width: 58px;
+  width: 58px;
   border-right: none;
+  font-size: 0.68rem;
   font-weight: 800;
   color: #000000;
   background: #d9d9d9 !important;
 }
 
 .sched-end-cell {
-  width: 45px;
-  min-width: 45px;
+  width: 58px;
+  min-width: 58px;
   border-right: none;
   border-bottom: 1.5px solid #cbd5e1;
   background: transparent;

@@ -700,7 +700,7 @@ function formatSlotLabel(mins) {
   const m = mins % 60;
   const period = h >= 12 ? 'PM' : 'AM';
   const dh = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${dh}:${m.toString().padStart(2, '0')}`;
+  return `${dh}:${m.toString().padStart(2, '0')} ${period}`;
 }
 
 // ─── Compute Time Range ──────────────────────────────────────────────────────
@@ -944,7 +944,7 @@ function renderGrid() {
   });
 
   const thEnd = document.createElement('th');
-  thEnd.className = 'sched-th-end';
+  thEnd.className = 'sched-th-time sched-th-end on-hour';
   thEnd.textContent = formatSlotLabel(timeEnd);
   trHead.appendChild(thEnd);
 
