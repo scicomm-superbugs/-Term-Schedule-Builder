@@ -1131,6 +1131,8 @@ function renderGrid() {
 
           if (isLastGroupInDay && isLastSubRowInGroup) {
             tr.classList.add('day-last');
+          } else if (isLastSubRowInGroup) {
+            tr.classList.add('level-last');
           }
 
           // Day cell (very first subRow of the day)
@@ -2022,11 +2024,21 @@ function exportVisualExcel() {
         const isLastGroupInDay = gIdx === groupSubRowsMap.length - 1;
 
         subRows.forEach((slotMap, sIdx) => {
+          const isLastSubRowInGroup = sIdx === subRows.length - 1;
+          const isDayLast = isLastGroupInDay && isLastSubRowInGroup;
+          const isLevelLast = isLastSubRowInGroup;
+
+          const bottomBorderStyle = isDayLast
+            ? 'border-bottom: 4px solid #dc2626 !important;'
+            : isLevelLast
+              ? 'border-bottom: 3.5px solid #000000 !important;'
+              : 'border-bottom: 1px solid #000000;';
+
           tableHtml += `<tr style="height: 60px;">`;
 
           if (isFirstDayRow) {
             const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
-            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border:1px solid #000000; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle;">${day.substring(0, 3)}</td>`;
+            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border:1px solid #000000; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-bottom:4px solid #dc2626 !important;">${day.substring(0, 3)}</td>`;
             isFirstDayRow = false;
           }
 
@@ -2037,7 +2049,7 @@ function exportVisualExcel() {
               ? `<span style="font-weight:bold; color:${prog.textColor}; mso-data-placement:same-cell;">${levelLabel}</span><br/><span style="color:${prog.color}; font-size:9px; font-weight:bold; mso-data-placement:same-cell;">${prog.name}</span>`
               : `<span style="font-weight:bold; color:#334155; mso-data-placement:same-cell;">${levelLabel}</span>`;
 
-            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border:1px solid #000000; border-left:3px solid ${prog.color}; mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
+            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border:1px solid #000000; border-left:3px solid ${prog.color}; ${isLastGroupInDay ? 'border-bottom:4px solid #dc2626 !important;' : 'border-bottom:3.5px solid #000000 !important;'} mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
           }
 
           // Slot mapping
@@ -2072,7 +2084,7 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border:1px solid #000000; border-left: 4px solid ${cellBorder}; padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-top:1px solid #000000; border-right:1px solid #000000; border-left: 4px solid ${cellBorder}; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -2092,7 +2104,7 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border:1px solid #000000; border-left: 4px solid ${cellBorder}; padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-top:1px solid #000000; border-right:1px solid #000000; border-left: 4px solid ${cellBorder}; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -2106,7 +2118,7 @@ function exportVisualExcel() {
               }
               s += span;
             } else {
-              tableHtml += `<td style="background-color:#ffffff; border:1px solid #000000;"></td>`;
+              tableHtml += `<td style="background-color:#ffffff; border-top:1px solid #000000; border-right:1px solid #000000; ${bottomBorderStyle}"></td>`;
               s++;
             }
           }

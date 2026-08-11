@@ -766,13 +766,15 @@ body {
   border-bottom: 1.5px solid #000000 !important;
 }
 
-.sched-row.level-sep td {
-  border-top: 3px solid #000000 !important;
+/* Bold black line between every level */
+.sched-row.level-last td {
+  border-bottom: 3.5px solid #000000 !important;
 }
 
+/* Bold red line between every day */
 .sched-row.day-last td,
 .sched-day {
-  border-bottom: 3px solid #000000 !important;
+  border-bottom: 4px solid #dc2626 !important;
 }
 
 /* Day separator row */
