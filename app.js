@@ -241,33 +241,19 @@ function getCurrentUser() {
 }
 
 function requireAuth(actionLabel = 'make changes') {
-  if (!currentUser) {
-    showToast(`🔐 Authentication required to ${actionLabel}. Please sign in.`, 'error');
-    openAuthModal('signin');
-    return false;
-  }
-  if (!currentUser.approved) {
-    showToast(`⏳ Account Pending Approval. Contact Admin (${SUPER_ADMIN_EMAIL}) to approve your account.`, 'error');
-    return false;
-  }
+  // All features are freely accessible to all users by default
   return true;
 }
 
 function updateAuthHeaderUI() {
   const container = document.getElementById('auth-header-container');
-  const appEl = document.querySelector('.app');
   const btnCloseAuth = document.getElementById('btn-close-auth');
   const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
   const pendingCount = users.filter(u => !u.approved).length;
 
-  if (currentUser) {
-    // UNLOCK PAGE CONTENT & CLOSE AUTH MODAL
-    if (appEl) appEl.classList.remove('page-locked');
-    if (btnCloseAuth) btnCloseAuth.style.display = 'block';
-    const authModal = document.getElementById('modal-auth');
-    if (authModal) authModal.classList.remove('active');
-    document.body.style.overflow = '';
+  if (btnCloseAuth) btnCloseAuth.style.display = 'block';
 
+  if (currentUser) {
     const isAdmin = currentUser.email && currentUser.email.toLowerCase() === SUPER_ADMIN_EMAIL;
     const adminBtn = isAdmin ? `
       <button class="btn btn-xs btn-warning" onclick="openAdminUsersModal()" style="font-size:0.7rem; padding:2px 8px;" title="Manage user accounts & approvals">
@@ -278,7 +264,7 @@ function updateAuthHeaderUI() {
     if (container) {
       container.innerHTML = `
         <div style="display:flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 10px; border-radius:20px; border:1px solid #cbd5e1; font-size:0.75rem;">
-          <span style="font-weight:800; color:#1e293b;">👤 ${currentUser.name}</span>
+          <span style="font-weight:800; color:#1e293b;">👤 ${currentUser.name || currentUser.username}</span>
           <span style="font-size:0.65rem; background:#dbeafe; color:#1e3a8a; padding:1px 6px; border-radius:10px; font-weight:700;">${currentUser.role || 'User'}</span>
           ${adminBtn}
           <button onclick="signOutUser()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:0.75rem; margin-left:2px;" title="Sign Out">✕</button>
@@ -286,32 +272,20 @@ function updateAuthHeaderUI() {
       `;
     }
   } else {
-    // LOCK PAGE CONTENT & FORCE SIGN IN
-    if (appEl) appEl.classList.add('page-locked');
-    if (btnCloseAuth) btnCloseAuth.style.display = 'none';
-
     if (container) {
       container.innerHTML = `
-        <button class="btn btn-primary btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem; font-weight:700;">
-          <span>🔐</span> Sign In
+        <button class="btn btn-primary btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem; font-weight:700; display:flex; align-items:center; gap:4px;">
+          <span>🔑</span> Sign In
         </button>
       `;
     }
-    openAuthModal('signin');
   }
 
-  // Update header buttons visual disabled state if signed out
-  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-activity-log', 'btn-add', 'btn-clear'];
+  // Restore opacity 1 for all buttons
+  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-import-visual', 'btn-activity-log', 'btn-add', 'btn-clear'];
   actionButtons.forEach(id => {
     const btn = document.getElementById(id);
-    if (btn) {
-      if (!currentUser) {
-        btn.style.opacity = '0.7';
-        btn.title = '🔐 Sign In required to use this action';
-      } else {
-        btn.style.opacity = '1';
-      }
-    }
+    if (btn) btn.style.opacity = '1';
   });
 }
 
