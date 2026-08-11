@@ -363,6 +363,7 @@ function handleAuthSubmit(e) {
       updateAuthHeaderUI();
       closeModal('modal-auth');
       document.getElementById('auth-form').reset();
+      setTimeout(() => { window.location.reload(); }, 200);
       return;
     }
 
@@ -389,6 +390,7 @@ function handleAuthSubmit(e) {
     updateAuthHeaderUI();
     closeModal('modal-auth');
     document.getElementById('auth-form').reset();
+    setTimeout(() => { window.location.reload(); }, 200);
   }
 }
 
@@ -396,10 +398,12 @@ function signOutUser() {
   if (currentUser) {
     logActivity('🚪 Signed Out', `User ${currentUser.name} signed out`, '🚪');
   }
+  if (typeof firebase !== 'undefined' && firebase.auth) {
+    try { firebase.auth().signOut(); } catch(e) {}
+  }
   currentUser = null;
   localStorage.removeItem('term_sched_current_user');
-  updateAuthHeaderUI();
-  showToast('Signed out', 'info');
+  window.location.reload();
 }
 
 // ─── Google Account Authentication ───────────────────────────────────────────
@@ -491,6 +495,11 @@ function processGoogleUserAuth(email, displayName) {
   closeModal('modal-auth');
   const authForm = document.getElementById('auth-form');
   if (authForm) authForm.reset();
+
+  // Automatically refresh website to cleanly open access!
+  setTimeout(() => {
+    window.location.reload();
+  }, 200);
 }
 
 // ─── Admin Users Management Panel ────────────────────────────────────────────
