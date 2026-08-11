@@ -1620,6 +1620,316 @@ function fixMojibake(str) {
   return str;
 }
 
+// ─── Visual Excel Importer ───────────────────────────────────────────────────
+let pendingVisualEntries = [];
+
+function initImportVisual() {
+  const btnImportVisual = document.getElementById('btn-import-visual');
+  const modalImportVisual = document.getElementById('modal-import-visual');
+  const btnCloseImportVisual = document.getElementById('btn-close-import-visual');
+  const btnCancelImportVisual = document.getElementById('btn-cancel-import-visual');
+  const btnConfirmImportVisual = document.getElementById('btn-confirm-import-visual');
+  const dropzoneVisual = document.getElementById('dropzone-visual');
+  const fileInputVisual = document.getElementById('file-input-visual');
+  const previewDiv = document.getElementById('import-visual-preview');
+
+  if (!btnImportVisual) return;
+
+  btnImportVisual.addEventListener('click', () => {
+    if (!requireAuth('import Visual Excel schedule')) return;
+    pendingVisualEntries = [];
+    previewDiv.classList.add('hidden');
+    previewDiv.innerHTML = '';
+    btnConfirmImportVisual.classList.add('hidden');
+    openModal('modal-import-visual');
+  });
+
+  if (btnCloseImportVisual) btnCloseImportVisual.addEventListener('click', () => closeModal('modal-import-visual'));
+  if (btnCancelImportVisual) btnCancelImportVisual.addEventListener('click', () => closeModal('modal-import-visual'));
+
+  if (dropzoneVisual && fileInputVisual) {
+    dropzoneVisual.addEventListener('click', () => fileInputVisual.click());
+    dropzoneVisual.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzoneVisual.classList.add('drag-over');
+    });
+    dropzoneVisual.addEventListener('dragleave', () => dropzoneVisual.classList.remove('drag-over'));
+    dropzoneVisual.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzoneVisual.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) {
+        handleVisualFileSelect(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInputVisual.addEventListener('change', (e) => {
+      if (e.target.files.length) {
+        handleVisualFileSelect(e.target.files[0]);
+      }
+    });
+  }
+
+  if (btnConfirmImportVisual) {
+    btnConfirmImportVisual.addEventListener('click', () => {
+      if (!pendingVisualEntries.length) return;
+      showConfirm(`Deploy ${pendingVisualEntries.length} entries to live schedule?`, () => {
+        let added = 0;
+        pendingVisualEntries.forEach(entry => {
+          const dupIdx = scheduleData.findIndex(e =>
+            e.day.toLowerCase() === entry.day.toLowerCase() &&
+            e.level === entry.level &&
+            e.program === entry.program &&
+            e.courseCode === entry.courseCode &&
+            e.startMinutes === entry.startMinutes
+          );
+          if (dupIdx !== -1) {
+            scheduleData[dupIdx] = entry;
+          } else {
+            scheduleData.push(entry);
+          }
+          added++;
+        });
+
+        saveData();
+        renderGrid();
+        closeModal('modal-import-visual');
+        logActivity('📥 Imported Visual Excel', `${added} entries deployed to live schedule`, '📥');
+        showToast(`Successfully deployed ${added} entries to schedule!`, 'success');
+      });
+    });
+  }
+}
+
+function handleVisualFileSelect(file) {
+  const fileName = file.name.toLowerCase();
+  const reader = new FileReader();
+
+  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
+    reader.readAsArrayBuffer(file);
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        let htmlContent = '';
+        if (typeof XLSX !== 'undefined') {
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheetName];
+          htmlContent = XLSX.utils.sheet_to_html(sheet);
+        } else {
+          const textDecoder = new TextDecoder('utf-8');
+          htmlContent = textDecoder.decode(data);
+        }
+        parseVisualHtmlTable(htmlContent);
+      } catch (err) {
+        console.error("SheetJS parse error, falling back to text reader:", err);
+        const textReader = new FileReader();
+        textReader.readAsText(file);
+        textReader.onload = (te) => parseVisualHtmlTable(te.target.result);
+      }
+    };
+  } else {
+    reader.readAsText(file);
+    reader.onload = (e) => parseVisualHtmlTable(e.target.result);
+  }
+}
+
+function parseVisualHtmlTable(htmlContent) {
+  const previewDiv = document.getElementById('import-visual-preview');
+  const btnConfirm = document.getElementById('btn-confirm-import-visual');
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlContent, 'text/html');
+  const table = doc.querySelector('table');
+
+  if (!table) {
+    previewDiv.classList.remove('hidden');
+    previewDiv.innerHTML = `<div style="color:var(--danger); font-weight:bold; padding:10px;">❌ No valid schedule table found in file.</div>`;
+    btnConfirm.classList.add('hidden');
+    return;
+  }
+
+  const ths = table.querySelectorAll('thead th, tr:first-child th, tr:first-child td');
+  const headerTimeMap = [];
+  const timeStart = 540;
+  let colIdx = 0;
+
+  ths.forEach(cell => {
+    const text = cell.textContent.trim();
+    if (text.toUpperCase() === 'DAY' || text.toUpperCase() === 'LEVEL') return;
+
+    const timeMin = parseTimeString(text);
+    if (timeMin !== null) {
+      headerTimeMap[colIdx] = timeMin;
+    } else {
+      headerTimeMap[colIdx] = timeStart + colIdx * 15;
+    }
+    colIdx++;
+  });
+
+  const rows = table.querySelectorAll('tbody tr, tr');
+  const entries = [];
+  let currentDay = 'Saturday';
+  let currentLevel = '1';
+  let currentProgram = 'general';
+
+  rows.forEach(tr => {
+    const tds = tr.querySelectorAll('td');
+    if (!tds.length) return;
+
+    let cellColIdx = 0;
+
+    tds.forEach(td => {
+      const text = td.textContent.trim();
+      const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
+      const isDayCell = td.classList.contains('sched-day') || text.match(/^(Sat|Sun|Mon|Tue|Wed|Thu|Fri)/i);
+      const isLevelCell = td.classList.contains('sched-level') || text.toLowerCase().includes('level');
+
+      if (isDayCell && cellColIdx === 0) {
+        const matchedDay = DAYS.find(d => d.toLowerCase().startsWith(text.substring(0, 3).toLowerCase()));
+        if (matchedDay) currentDay = matchedDay;
+        return;
+      }
+
+      if (isLevelCell && cellColIdx <= 1) {
+        const lvlMatch = text.match(/Level\s*(\d+)/i);
+        if (lvlMatch) currentLevel = lvlMatch[1];
+
+        const matchedProg = PROGRAMS.find(p => text.toLowerCase().includes(p.name.toLowerCase()) || text.toLowerCase().includes(p.id.toLowerCase()));
+        if (matchedProg) currentProgram = matchedProg.id;
+        else if (text.toLowerCase().includes('general')) currentProgram = 'general';
+        return;
+      }
+
+      const isEntry = text.length > 3 && (
+        text.match(/[A-Z]{2,4}\s*\d{3}/i) ||
+        text.includes('Lecture') || text.includes('Lab') || text.includes('Tut')
+      );
+
+      if (isEntry) {
+        const startMin = headerTimeMap[cellColIdx] !== undefined 
+          ? headerTimeMap[cellColIdx] 
+          : timeStart + cellColIdx * 15;
+        const endMin = startMin + colSpan * 15;
+
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const line1 = lines[0] || '';
+        const codeMatch = line1.match(/([A-Z]{2,4}\s*\d{3})/i);
+        const courseCode = codeMatch ? codeMatch[1].replace(/\s+/, '').toUpperCase() : line1.split('-')[0].trim().toUpperCase();
+
+        let courseName = '';
+        if (line1.includes('-')) {
+          courseName = line1.substring(line1.indexOf('-') + 1).trim();
+        }
+
+        const line2 = lines.find(l => l.includes('Lecture') || l.includes('Lab') || l.includes('Tut') || l.includes('Lec')) || '';
+        let entryType = 'lecture';
+        if (line2.toLowerCase().includes('lab')) entryType = 'lab';
+        else if (line2.toLowerCase().includes('tut')) entryType = 'tutorial';
+
+        let component = 'L1S';
+        if (entryType === 'lecture') {
+          const gMatch = line2.match(/Group\s*(\d+)/i) || line2.match(/\((\d+)\)/);
+          const gNum = gMatch ? gMatch[1] : '1';
+          component = `L${gNum}S`;
+        } else {
+          const grpStr = line2.replace(/^Lab/i, '').replace(/^Tut(orial)?/i, '').replace(/^-\s*/, '').replace(/\(Class No:.*?\)/i, '').trim();
+          component = grpStr || '1A';
+        }
+
+        let classNo = '';
+        const classMatch = text.match(/Class No:\s*(\d+)/i) || text.match(/\(Class No:\s*(\d+)\)/i);
+        if (classMatch) classNo = classMatch[1];
+
+        const line3 = lines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د') || l.toLowerCase().includes('dr.')) || '';
+        const instructor = line3.replace('👤', '').trim();
+
+        const line4 = lines.find(l => l.includes('📍') || l.match(/[A-Z0-9]+-[A-Z0-9]+/)) || '';
+        let facilityId = '';
+        let capacity = '';
+        if (line4) {
+          const facClean = line4.replace('📍', '').trim();
+          const capMatch = facClean.match(/\((\d+)\)/);
+          if (capMatch) {
+            capacity = capMatch[1];
+            facilityId = facClean.replace(capMatch[0], '').trim();
+          } else {
+            facilityId = facClean;
+          }
+        }
+
+        entries.push({
+          id: generateId(),
+          day: currentDay,
+          level: currentLevel,
+          program: currentProgram,
+          courseCode,
+          courseName,
+          entryType,
+          component,
+          association: '',
+          classNo,
+          facilityId,
+          capacity,
+          instructor,
+          startMinutes: startMin,
+          endMinutes: endMin,
+          customColor: ''
+        });
+      }
+
+      cellColIdx += colSpan;
+    });
+  });
+
+  pendingVisualEntries = entries;
+
+  if (!entries.length) {
+    previewDiv.classList.remove('hidden');
+    previewDiv.innerHTML = `<div style="color:var(--danger); font-weight:bold; padding:10px;">⚠️ Could not extract any valid schedule entries from file.</div>`;
+    btnConfirm.classList.add('hidden');
+    return;
+  }
+
+  let previewHtml = `
+    <div style="font-weight:700; color:var(--text-primary); margin-bottom:8px; font-size:0.88rem;">
+      ✅ Successfully extracted <span style="color:var(--primary);">${entries.length}</span> schedule entries:
+    </div>
+    <div style="max-height:220px; overflow-y:auto; border:1px solid var(--border-light); border-radius:6px;">
+      <table style="width:100%; border-collapse:collapse; font-size:0.75rem;">
+        <thead>
+          <tr style="background:var(--bg-secondary); border-bottom:1px solid var(--border-light); text-align:left;">
+            <th style="padding:6px;">Day</th>
+            <th style="padding:6px;">Level</th>
+            <th style="padding:6px;">Course</th>
+            <th style="padding:6px;">Component</th>
+            <th style="padding:6px;">Time</th>
+            <th style="padding:6px;">Instructor</th>
+            <th style="padding:6px;">Room</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  entries.forEach(e => {
+    previewHtml += `
+      <tr style="border-bottom:1px solid var(--border-light);">
+        <td style="padding:6px; font-weight:700;">${e.day.substring(0, 3)}</td>
+        <td style="padding:6px;">L${e.level} (${e.program})</td>
+        <td style="padding:6px; font-weight:700; color:var(--primary);">${e.courseCode}</td>
+        <td style="padding:6px;">${e.entryType} ${e.component}</td>
+        <td style="padding:6px;">${minutesToTimeString(e.startMinutes)} - ${minutesToTimeString(e.endMinutes)}</td>
+        <td style="padding:6px;">${e.instructor || '—'}</td>
+        <td style="padding:6px;">${e.facilityId || '—'}</td>
+      </tr>
+    `;
+  });
+
+  previewHtml += `</tbody></table></div>`;
+  previewDiv.classList.remove('hidden');
+  previewDiv.innerHTML = previewHtml;
+  btnConfirm.classList.remove('hidden');
+}
+
 // ─── CSV Exporter ────────────────────────────────────────────────────────────
 function exportCSV() {
   if (scheduleData.length === 0) { showToast('No data to export', 'error'); return; }
@@ -2348,6 +2658,7 @@ function init() {
   loadData();
   renderGrid();
   initEventListeners();
+  initImportVisual();
   updateComponentPreview();
   initFirebase();
 }
