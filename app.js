@@ -279,6 +279,11 @@ function switchAuthTab(tab) {
   const emailLabel = document.getElementById('auth-email-label');
   if (emailLabel) emailLabel.textContent = isRegister ? 'Email Address' : 'Username or Email';
 
+  const emailInput = document.getElementById('auth-email');
+  if (emailInput) {
+    emailInput.placeholder = isRegister ? 'Example@aiu.edu.eg' : 'Salem123 or Example@aiu.edu.eg';
+  }
+
   const modalTitle = document.getElementById('auth-modal-title');
   if (modalTitle) modalTitle.textContent = isRegister ? '📝 Register New Account' : '🔐 Sign In to Schedule Builder';
   const btnSubmit = document.getElementById('btn-auth-submit');
