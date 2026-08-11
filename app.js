@@ -52,8 +52,15 @@ function initFirebase() {
       }
       db = firebase.database();
 
-      // Check Google Auth redirect result on page load
+      // Automatically handle Firebase Auth State changes (Google Sign-In & sessions)
       if (firebase.auth) {
+        firebase.auth().onAuthStateChanged((user) => {
+          if (user && user.email) {
+            console.log("Firebase Auth State Changed:", user.email);
+            processGoogleUserAuth(user.email, user.displayName || user.email);
+          }
+        });
+
         firebase.auth().getRedirectResult().then((result) => {
           if (result && result.user) {
             processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
@@ -2087,12 +2094,20 @@ function resetEntryForm() {
 
 // ─── Modal Management ────────────────────────────────────────────────────────
 function openModal(id) {
-  document.getElementById(id).classList.add('active');
+  const el = document.getElementById(id);
+  if (el) {
+    el.style.display = 'flex';
+    el.classList.add('active');
+  }
   document.body.style.overflow = 'hidden';
 }
 
 function closeModal(id) {
-  document.getElementById(id).classList.remove('active');
+  const el = document.getElementById(id);
+  if (el) {
+    el.classList.remove('active');
+    el.style.display = 'none';
+  }
   document.body.style.overflow = '';
 }
 
