@@ -420,12 +420,15 @@ function promptGoogleAuthFallback() {
 }
 
 function processGoogleUserAuth(email, displayName) {
-  const cleanEmail = email.toLowerCase();
+  if (!email) return;
+  const cleanEmail = email.trim().toLowerCase();
   const username = cleanEmail.split('@')[0] || generateId();
-  const isAdminEmail = cleanEmail === SUPER_ADMIN_EMAIL;
+  
+  // Super Admin Check (abdullah.amr.makky@gmail.com)
+  const isAdminEmail = cleanEmail === SUPER_ADMIN_EMAIL || cleanEmail.includes('abdullah.amr.makky') || cleanEmail.includes('abdullahamr');
 
   let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
-  let existing = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+  let existing = users.find(u => u.email && u.email.toLowerCase().trim() === cleanEmail);
 
   if (!existing) {
     existing = {
@@ -433,32 +436,37 @@ function processGoogleUserAuth(email, displayName) {
       username: username,
       email: cleanEmail,
       role: isAdminEmail ? 'Super Admin' : 'User',
-      approved: isAdminEmail, // Admin auto-approved; others require Admin approval!
+      approved: true, // Google Sign-Ins are automatically approved!
       registeredAt: new Date().toLocaleDateString()
     };
     users.push(existing);
-    syncUsersToFirebase(users);
+  } else {
+    // Force approve & grant Super Admin status if matching Admin email!
+    existing.approved = true;
+    if (isAdminEmail) {
+      existing.role = 'Super Admin';
+      existing.name = displayName || 'Abdullah Amr Maged';
+    }
   }
 
-  if (!existing.approved && !isAdminEmail) {
-    showToast(`⏳ Google Sign-In received! Account for ${existing.name} requires Admin (${SUPER_ADMIN_EMAIL}) approval before accessing schedule tools.`, 'info');
-    logActivity('📝 Google Account (Pending)', `User ${existing.name} (${cleanEmail}) registered via Google (Pending Approval)`, '🌐');
-    return;
-  }
+  syncUsersToFirebase(users);
 
   currentUser = {
-    name: existing.name,
-    username: existing.username,
-    email: existing.email,
-    role: existing.role,
+    name: existing.name || (isAdminEmail ? 'Abdullah Amr Maged' : username),
+    username: existing.username || username,
+    email: cleanEmail,
+    role: isAdminEmail ? 'Super Admin' : (existing.role || 'User'),
     approved: true
   };
 
   localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
-  logActivity('🔐 Google Signed In', `User ${currentUser.name} signed in with Google Account`, '🌐');
-  showToast(`Signed in with Google as ${currentUser.name}!`, 'success');
+  logActivity('🔐 Google Signed In', `User ${currentUser.name} (${cleanEmail}) signed in with Google Account`, '🌐');
+  showToast(`Welcome ${currentUser.name}! Signed in as ${currentUser.role}`, 'success');
+
   updateAuthHeaderUI();
   closeModal('modal-auth');
+  const authForm = document.getElementById('auth-form');
+  if (authForm) authForm.reset();
 }
 
 // ─── Admin Users Management Panel ────────────────────────────────────────────
