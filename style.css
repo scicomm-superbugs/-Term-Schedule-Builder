@@ -1229,6 +1229,13 @@ body {
 }
 
 /* ── Toast ──────────────────────────────────────────────────────────────── */
+.app.page-locked {
+  filter: blur(12px) grayscale(30%);
+  pointer-events: none !important;
+  user-select: none !important;
+  transition: filter 0.3s ease;
+}
+
 .toast-container {
   position: fixed;
   bottom: 24px;

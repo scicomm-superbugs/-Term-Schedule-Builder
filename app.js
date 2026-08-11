@@ -114,9 +114,10 @@ function syncUsersToFirebase(users) {
 let currentUser = null;
 let currentAuthTab = 'signin';
 
+const SUPER_ADMIN_EMAIL = 'abdullah.amr.makky@gmail.com';
 const SUPER_ADMIN = {
-  username: 'abdullahamr871',
-  email: 'abdullahamr871@aiu.edu.eg',
+  username: 'abdullah',
+  email: SUPER_ADMIN_EMAIL,
   name: 'Abdullah Amr Maged',
   password: 'H2CO3NaOH#',
   role: 'Super Admin',
@@ -124,9 +125,13 @@ const SUPER_ADMIN = {
 };
 
 function initAuth() {
-  // Ensure Super Admin exists in users list
   let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
-  const adminIdx = users.findIndex(u => u.username && u.username.toLowerCase() === 'abdullahamr871');
+  
+  // Filter out any legacy admin accounts
+  users = users.filter(u => u.email !== 'abdullahamr871@aiu.edu.eg' && u.username !== 'abdullahamr871');
+
+  // Ensure Super Admin exists in users list
+  const adminIdx = users.findIndex(u => u.email && u.email.toLowerCase() === SUPER_ADMIN_EMAIL);
   if (adminIdx === -1) {
     users.unshift(SUPER_ADMIN);
   } else {
@@ -138,8 +143,7 @@ function initAuth() {
   if (savedUser) {
     try {
       const parsed = JSON.parse(savedUser);
-      // Re-verify if approved in users db
-      const dbUser = users.find(u => u.username && u.username.toLowerCase() === parsed.username.toLowerCase());
+      const dbUser = users.find(u => u.email && u.email.toLowerCase() === parsed.email.toLowerCase());
       if (dbUser && dbUser.approved) {
         currentUser = { name: dbUser.name, username: dbUser.username, email: dbUser.email, role: dbUser.role, approved: true };
       } else {
@@ -149,7 +153,10 @@ function initAuth() {
     } catch(e) {
       currentUser = null;
     }
+  } else {
+    currentUser = null; // Do NOT auto-login as admin unless manually signed in!
   }
+
   updateAuthHeaderUI();
 }
 
@@ -164,7 +171,7 @@ function requireAuth(actionLabel = 'make changes') {
     return false;
   }
   if (!currentUser.approved) {
-    showToast(`⏳ Account Pending Approval. Contact Admin (abdullahamr871) to approve your account.`, 'error');
+    showToast(`⏳ Account Pending Approval. Contact Admin (${SUPER_ADMIN_EMAIL}) to approve your account.`, 'error');
     return false;
   }
   return true;
@@ -172,37 +179,50 @@ function requireAuth(actionLabel = 'make changes') {
 
 function updateAuthHeaderUI() {
   const container = document.getElementById('auth-header-container');
-  if (!container) return;
-
+  const appEl = document.querySelector('.app');
+  const btnCloseAuth = document.getElementById('btn-close-auth');
   const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
   const pendingCount = users.filter(u => !u.approved).length;
 
   if (currentUser) {
-    const isAdmin = currentUser.username && currentUser.username.toLowerCase() === 'abdullahamr871';
+    // UNLOCK PAGE CONTENT
+    if (appEl) appEl.classList.remove('page-locked');
+    if (btnCloseAuth) btnCloseAuth.style.display = 'block';
+
+    const isAdmin = currentUser.email && currentUser.email.toLowerCase() === SUPER_ADMIN_EMAIL;
     const adminBtn = isAdmin ? `
       <button class="btn btn-xs btn-warning" onclick="openAdminUsersModal()" style="font-size:0.7rem; padding:2px 8px;" title="Manage user accounts & approvals">
         👑 Accounts ${pendingCount > 0 ? `<span style="background:#ef4444; color:#fff; padding:1px 5px; border-radius:10px; font-weight:800;">${pendingCount}</span>` : ''}
       </button>
     ` : '';
 
-    container.innerHTML = `
-      <div style="display:flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 10px; border-radius:20px; border:1px solid #cbd5e1; font-size:0.75rem;">
-        <span style="font-weight:800; color:#1e293b;">👤 ${currentUser.name}</span>
-        <span style="font-size:0.65rem; background:#dbeafe; color:#1e3a8a; padding:1px 6px; border-radius:10px; font-weight:700;">${currentUser.role || 'User'}</span>
-        ${adminBtn}
-        <button onclick="signOutUser()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:0.75rem; margin-left:2px;" title="Sign Out">✕</button>
-      </div>
-    `;
+    if (container) {
+      container.innerHTML = `
+        <div style="display:flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 10px; border-radius:20px; border:1px solid #cbd5e1; font-size:0.75rem;">
+          <span style="font-weight:800; color:#1e293b;">👤 ${currentUser.name}</span>
+          <span style="font-size:0.65rem; background:#dbeafe; color:#1e3a8a; padding:1px 6px; border-radius:10px; font-weight:700;">${currentUser.role || 'User'}</span>
+          ${adminBtn}
+          <button onclick="signOutUser()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:0.75rem; margin-left:2px;" title="Sign Out">✕</button>
+        </div>
+      `;
+    }
   } else {
-    container.innerHTML = `
-      <button class="btn btn-primary btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem; font-weight:700;">
-        <span>🔐</span> Sign In
-      </button>
-    `;
+    // LOCK PAGE CONTENT & FORCE SIGN IN
+    if (appEl) appEl.classList.add('page-locked');
+    if (btnCloseAuth) btnCloseAuth.style.display = 'none';
+
+    if (container) {
+      container.innerHTML = `
+        <button class="btn btn-primary btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem; font-weight:700;">
+          <span>🔐</span> Sign In
+        </button>
+      `;
+    }
+    openAuthModal('signin');
   }
 
   // Update header buttons visual disabled state if signed out
-  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-activity-log', 'btn-import-schedule', 'btn-add', 'btn-clear'];
+  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-activity-log', 'btn-add', 'btn-clear'];
   actionButtons.forEach(id => {
     const btn = document.getElementById(id);
     if (btn) {
@@ -256,7 +276,6 @@ function handleAuthSubmit(e) {
   if (currentAuthTab === 'register') {
     const name = document.getElementById('auth-name').value.trim();
     const username = document.getElementById('auth-username').value.trim().toLowerCase();
-    const role = 'User';
 
     if (!name || !username || !inputEmailOrUser || !password) {
       showToast('Please fill all required fields', 'error');
@@ -282,7 +301,7 @@ function handleAuthSubmit(e) {
     syncUsersToFirebase(users);
 
     logActivity('📝 Registered Account (Pending)', `User ${name} (@${username}) registered`, '👤');
-    showToast(`✅ Registration submitted! Account must be approved by Admin (abdullahamr871) before signing in.`, 'info');
+    showToast(`✅ Registration submitted! Account must be approved by Admin (${SUPER_ADMIN_EMAIL}) before signing in.`, 'info');
     closeModal('modal-auth');
     document.getElementById('auth-form').reset();
     updateAuthHeaderUI();
@@ -293,7 +312,7 @@ function handleAuthSubmit(e) {
     }
 
     // Check Super Admin credentials
-    if ((inputEmailOrUser === 'abdullahamr871' || inputEmailOrUser === 'abdullahamr871@aiu.edu.eg') && password === 'H2CO3NaOH#') {
+    if ((inputEmailOrUser === SUPER_ADMIN_EMAIL || inputEmailOrUser === 'abdullah') && password === 'H2CO3NaOH#') {
       currentUser = { name: SUPER_ADMIN.name, username: SUPER_ADMIN.username, email: SUPER_ADMIN.email, role: SUPER_ADMIN.role, approved: true };
       localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
       logActivity('🔐 Admin Signed In', `Admin ${currentUser.name} signed in`, '👑');
@@ -315,7 +334,7 @@ function handleAuthSubmit(e) {
     }
 
     if (!found.approved) {
-      showToast('⏳ Account Pending Approval. Contact Admin (abdullahamr871) to approve your account.', 'error');
+      showToast(`⏳ Account Pending Approval. Contact Admin (${SUPER_ADMIN_EMAIL}) to approve your account.`, 'error');
       return;
     }
 
@@ -343,30 +362,40 @@ function signOutUser() {
 // ─── Google Account Authentication ───────────────────────────────────────────
 function signInWithGoogle() {
   if (typeof firebase !== 'undefined' && firebase.auth) {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    firebase.auth().signInWithPopup(provider).then((result) => {
-      processGoogleUserAuth(result.user.email, result.user.displayName);
-    }).catch((err) => {
-      console.warn("Google Auth popup skipped/failed:", err);
+    try {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      firebase.auth().signInWithPopup(provider).then((result) => {
+        if (result && result.user) {
+          processGoogleUserAuth(result.user.email, result.user.displayName);
+        } else {
+          promptGoogleAuthFallback();
+        }
+      }).catch((err) => {
+        console.warn("Google Auth popup error/blocked:", err);
+        promptGoogleAuthFallback();
+      });
+    } catch(e) {
+      console.warn("Google Auth exception:", e);
       promptGoogleAuthFallback();
-    });
+    }
   } else {
     promptGoogleAuthFallback();
   }
 }
 
 function promptGoogleAuthFallback() {
-  const email = prompt("🌐 Sign in with Google Account\n\nPlease enter your Google Email address (e.g. name@aiu.edu.eg):");
+  const email = prompt("🌐 Google Account Sign In\n\nPlease enter your Google email address:");
   if (!email || !email.trim()) return;
-  const namePart = email.split('@')[0];
+  const cleanEmail = email.trim().toLowerCase();
+  const namePart = cleanEmail.split('@')[0];
   const displayName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-  processGoogleUserAuth(email.trim().toLowerCase(), displayName);
+  processGoogleUserAuth(cleanEmail, displayName);
 }
 
 function processGoogleUserAuth(email, displayName) {
   const cleanEmail = email.toLowerCase();
   const username = cleanEmail.split('@')[0] || generateId();
-  const isAdminEmail = cleanEmail === 'abdullahamr871@aiu.edu.eg' || cleanEmail.includes('abdullahamr871');
+  const isAdminEmail = cleanEmail === SUPER_ADMIN_EMAIL;
 
   let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
   let existing = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
@@ -376,7 +405,7 @@ function processGoogleUserAuth(email, displayName) {
       name: displayName || username,
       username: username,
       email: cleanEmail,
-      role: isAdminEmail ? 'Super Admin' : 'Faculty Member',
+      role: isAdminEmail ? 'Super Admin' : 'User',
       approved: isAdminEmail, // Admin auto-approved; others require Admin approval!
       registeredAt: new Date().toLocaleDateString()
     };
@@ -385,9 +414,8 @@ function processGoogleUserAuth(email, displayName) {
   }
 
   if (!existing.approved && !isAdminEmail) {
-    showToast(`⏳ Google Sign-In received! Account for ${existing.name} requires Admin (abdullahamr871) approval before accessing schedule tools.`, 'info');
+    showToast(`⏳ Google Sign-In received! Account for ${existing.name} requires Admin (${SUPER_ADMIN_EMAIL}) approval before accessing schedule tools.`, 'info');
     logActivity('📝 Google Account (Pending)', `User ${existing.name} (${cleanEmail}) registered via Google (Pending Approval)`, '🌐');
-    closeModal('modal-auth');
     return;
   }
 
@@ -408,8 +436,8 @@ function processGoogleUserAuth(email, displayName) {
 
 // ─── Admin Users Management Panel ────────────────────────────────────────────
 function openAdminUsersModal() {
-  if (!currentUser || currentUser.username.toLowerCase() !== 'abdullahamr871') {
-    showToast('Only Super Admin (abdullahamr871) can manage accounts', 'error');
+  if (!currentUser || currentUser.email.toLowerCase() !== SUPER_ADMIN_EMAIL) {
+    showToast(`Only Super Admin (${SUPER_ADMIN_EMAIL}) can manage accounts`, 'error');
     return;
   }
   renderAdminUsersTable();
@@ -423,7 +451,7 @@ function renderAdminUsersTable() {
   const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
 
   tbody.innerHTML = users.map(u => {
-    const isSuperAdmin = u.username && u.username.toLowerCase() === 'abdullahamr871';
+    const isSuperAdmin = u.email && u.email.toLowerCase() === SUPER_ADMIN_EMAIL;
     const statusHtml = u.approved
       ? `<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-weight:800; font-size:0.7rem;">✅ Approved</span>`
       : `<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:800; font-size:0.7rem;">⏳ Pending Approval</span>`;
@@ -442,7 +470,7 @@ function renderAdminUsersTable() {
           <div style="font-weight:700; color:#0f172a;">@${u.username}</div>
           <div style="font-size:0.68rem; color:#94a3b8;">${u.email}</div>
         </td>
-        <td style="font-size:0.75rem; color:#334155; font-weight:600;">${u.role}</td>
+        <td style="font-size:0.75rem; color:#334155; font-weight:600;">${u.role || 'User'}</td>
         <td>${statusHtml}</td>
         <td style="text-align:center;">${actionHtml}</td>
       </tr>
@@ -464,12 +492,13 @@ function approveUserAccount(username) {
 }
 
 function deleteUserAccount(username) {
-  if (username.toLowerCase() === 'abdullahamr871') {
+  let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
+  const target = users.find(x => x.username && x.username.toLowerCase() === username.toLowerCase());
+  if (target && target.email && target.email.toLowerCase() === SUPER_ADMIN_EMAIL) {
     showToast('Cannot delete Super Admin account', 'error');
     return;
   }
   showConfirm(`Delete account for @${username}?`, () => {
-    let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
     users = users.filter(x => x.username && x.username.toLowerCase() !== username.toLowerCase());
     syncUsersToFirebase(users);
     logActivity('❌ Account Deleted', `Admin deleted account @${username}`, '👑');
