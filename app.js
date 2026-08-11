@@ -42,6 +42,7 @@ const firebaseConfig = {
 };
 
 let db = null;
+let fsDb = null;
 let isRemoteSyncUpdate = false;
 
 function initFirebase() {
@@ -50,7 +51,8 @@ function initFirebase() {
       if (!firebase.apps.length) {
         firebase.initializeApp(firebaseConfig);
       }
-      db = firebase.database();
+      if (firebase.database) db = firebase.database();
+      if (firebase.firestore) fsDb = firebase.firestore();
 
       // Automatically handle Firebase Auth State changes (Google Sign-In & sessions)
       if (firebase.auth) {
@@ -72,67 +74,85 @@ function initFirebase() {
 
       setupRealtimeSyncListeners();
     } catch(e) {
-      console.warn("Firebase Realtime Sync Notice:", e);
+      console.warn("Firebase Sync Notice:", e);
     }
   }
 }
 
 function setupRealtimeSyncListeners() {
-  if (!db) return;
+  // 1. Realtime Database Listeners
+  if (db) {
+    db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
+      const val = snapshot.val();
+      if (val && Array.isArray(val)) {
+        isRemoteSyncUpdate = true;
+        scheduleData = val;
+        localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+        renderGrid();
+        updateStats();
+        isRemoteSyncUpdate = false;
+      }
+    });
 
-  // 1. Realtime Timetable Schedule Sync across devices
-  db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
-    const val = snapshot.val();
-    if (val && Array.isArray(val)) {
-      isRemoteSyncUpdate = true;
-      scheduleData = val;
-      localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-      renderGrid();
-      updateStats();
-      isRemoteSyncUpdate = false;
-    }
-  });
+    db.ref('term_schedule/users').on('value', (snapshot) => {
+      const val = snapshot.val();
+      if (val && Array.isArray(val)) {
+        localStorage.setItem('term_sched_users', JSON.stringify(val));
+        if (currentUser) {
+          const selfInDb = val.find(u => u.username && u.username.toLowerCase() === currentUser.username.toLowerCase());
+          if (selfInDb) {
+            currentUser.approved = selfInDb.approved;
+            currentUser.role = selfInDb.role;
+            localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
+          }
+        }
+        updateAuthHeaderUI();
+      }
+    });
 
-  // 2. Realtime Registered Users Sync across devices
-  db.ref('term_schedule/users').on('value', (snapshot) => {
-    const val = snapshot.val();
-    if (val && Array.isArray(val)) {
-      localStorage.setItem('term_sched_users', JSON.stringify(val));
-      
-      if (currentUser) {
-        const selfInDb = val.find(u => u.username && u.username.toLowerCase() === currentUser.username.toLowerCase());
-        if (selfInDb) {
-          currentUser.approved = selfInDb.approved;
-          currentUser.role = selfInDb.role;
-          localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
+    db.ref('term_schedule/activityLogs').on('value', (snapshot) => {
+      const val = snapshot.val();
+      if (val && Array.isArray(val)) {
+        localStorage.setItem('term_sched_activity_logs', JSON.stringify(val));
+      }
+    });
+  }
+
+  // 2. Cloud Firestore Realtime Listeners (Dual Cloud Sync across all devices)
+  if (fsDb) {
+    fsDb.collection('term_schedules').doc('active').onSnapshot((docSnap) => {
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.scheduleData)) {
+          isRemoteSyncUpdate = true;
+          scheduleData = data.scheduleData;
+          localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+          renderGrid();
+          updateStats();
+          isRemoteSyncUpdate = false;
         }
       }
-      updateAuthHeaderUI();
+    }, (err) => console.warn("Firestore schedule listener notice:", err));
 
-      const adminModal = document.getElementById('modal-admin-users');
-      if (adminModal && adminModal.classList.contains('active')) {
-        renderAdminUsersTable();
+    fsDb.collection('term_schedules').doc('users').onSnapshot((docSnap) => {
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.users)) {
+          localStorage.setItem('term_sched_users', JSON.stringify(data.users));
+          updateAuthHeaderUI();
+        }
       }
-    }
-  });
-
-  // 3. Realtime Activity Audit Logs Sync across devices
-  db.ref('term_schedule/activityLogs').on('value', (snapshot) => {
-    const val = snapshot.val();
-    if (val && Array.isArray(val)) {
-      localStorage.setItem('term_sched_activity_logs', JSON.stringify(val));
-      const logModal = document.getElementById('modal-activity-log');
-      if (logModal && logModal.classList.contains('active')) {
-        renderActivityLogs();
-      }
-    }
-  });
+    }, (err) => console.warn("Firestore users listener notice:", err));
+  }
 }
 
 function syncUsersToFirebase(users) {
   localStorage.setItem('term_sched_users', JSON.stringify(users));
   if (db) {
     db.ref('term_schedule/users').set(users);
+  }
+  if (fsDb) {
+    fsDb.collection('term_schedules').doc('users').set({ users: users }, { merge: true });
   }
 }
 
@@ -996,8 +1016,7 @@ function renderGrid() {
   slots.forEach((slot) => {
     const th = document.createElement('th');
     th.className = 'sched-th-time';
-    if (slot.start % 60 === 0) th.classList.add('hour-start');
-    if ((slot.start + 15) % 60 === 0) th.classList.add('hour-end');
+    if (slot.start % 60 === 0) th.classList.add('on-hour');
     th.textContent = formatSlotLabel(slot.start);
     trHead.appendChild(th);
   });
@@ -1044,8 +1063,7 @@ function renderGrid() {
       slots.forEach((slot) => {
         const td = document.createElement('td');
         td.className = 'sched-empty';
-        if (slot.start % 60 === 0) td.classList.add('hour-start');
-        if ((slot.start + 15) % 60 === 0) td.classList.add('hour-end');
+        if (slot.start % 60 === 0) td.classList.add('on-hour');
         tr.appendChild(td);
       });
       const tdEnd = document.createElement('td');
@@ -1111,8 +1129,6 @@ function renderGrid() {
               td.colSpan = span;
               const entryType = entry.entryType || parseComponent(entry.component).type;
               td.className = `sched-entry-cell ${entryType}`;
-              if (entry.startMinutes % 60 === 0) td.classList.add('hour-start');
-              if (entry.endMinutes % 60 === 0) td.classList.add('hour-end');
               td.dataset.id = entry.id;
 
               if (entry.customColor) {
@@ -1194,8 +1210,7 @@ function renderGrid() {
             } else {
               const td = document.createElement('td');
               td.className = 'sched-empty';
-              if (slots[i].start % 60 === 0) td.classList.add('hour-start');
-              if ((slots[i].start + 15) % 60 === 0) td.classList.add('hour-end');
+              if (slots[i].start % 60 === 0) td.classList.add('on-hour');
               tr.appendChild(td);
               i++;
             }
@@ -2133,12 +2148,21 @@ function showToast(message, type = 'info') {
   setTimeout(() => { toast.classList.add('hiding'); setTimeout(() => toast.remove(), 250); }, 3000);
 }
 
-// ─── LocalStorage ────────────────────────────────────────────────────────────
+// ─── LocalStorage & Cloud Realtime Sync ───────────────────────────────────────
 function saveData() {
   try {
     localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-    if (db && !isRemoteSyncUpdate) {
-      db.ref('term_schedule/scheduleData').set(scheduleData);
+    if (!isRemoteSyncUpdate) {
+      if (db) {
+        db.ref('term_schedule/scheduleData').set(scheduleData);
+      }
+      if (fsDb) {
+        fsDb.collection('term_schedules').doc('active').set({
+          scheduleData: scheduleData,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser ? currentUser.name : 'Anonymous'
+        }, { merge: true });
+      }
     }
   }
   catch (e) { console.warn('Save failed:', e); }
