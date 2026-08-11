@@ -2465,6 +2465,28 @@ function showConfirm(message, callback) {
   openModal('modal-confirm');
 }
 
+// ─── Modal Helpers ────────────────────────────────────────────────────────────
+function openModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+}
+
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+  }
+}
+
+function openAuthModal(tab = 'signin') {
+  switchAuthTab(tab);
+  openModal('modal-auth');
+}
+
 // ─── Toast ───────────────────────────────────────────────────────────────────
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
