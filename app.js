@@ -204,9 +204,12 @@ function updateAuthHeaderUI() {
   const pendingCount = users.filter(u => !u.approved).length;
 
   if (currentUser) {
-    // UNLOCK PAGE CONTENT
+    // UNLOCK PAGE CONTENT & CLOSE AUTH MODAL
     if (appEl) appEl.classList.remove('page-locked');
     if (btnCloseAuth) btnCloseAuth.style.display = 'block';
+    const authModal = document.getElementById('modal-auth');
+    if (authModal) authModal.classList.remove('active');
+    document.body.style.overflow = '';
 
     const isAdmin = currentUser.email && currentUser.email.toLowerCase() === SUPER_ADMIN_EMAIL;
     const adminBtn = isAdmin ? `
@@ -336,7 +339,16 @@ function handleAuthSubmit(e) {
     }
 
     // Check Super Admin credentials
-    if ((inputEmailOrUser === SUPER_ADMIN_EMAIL || inputEmailOrUser === 'abdullah') && password === 'H2CO3NaOH#') {
+    const cleanInput = inputEmailOrUser.trim().toLowerCase();
+    const isAdminAlias = cleanInput === SUPER_ADMIN_EMAIL || 
+                         cleanInput === 'abdullah' || 
+                         cleanInput === 'abdullahamr871' || 
+                         cleanInput === 'abdullah.amr871' || 
+                         cleanInput === 'abdullah.amr' ||
+                         cleanInput.includes('abdullahamr') ||
+                         cleanInput.includes('abdullah.amr');
+
+    if (isAdminAlias && password === 'H2CO3NaOH#') {
       currentUser = { name: SUPER_ADMIN.name, username: SUPER_ADMIN.username, email: SUPER_ADMIN.email, role: SUPER_ADMIN.role, approved: true };
       localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
       logActivity('🔐 Admin Signed In', `Admin ${currentUser.name} signed in`, '👑');
