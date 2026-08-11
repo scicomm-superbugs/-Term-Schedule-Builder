@@ -2,6 +2,7 @@
    Term Schedule Builder — Application Logic
    Horizontal timeline layout with Day → Level → Program grouping
    Realtime Multi-Device Cloud Synchronization powered by Firebase
+   Version: 15.0 (Inclusive End-Time Column Rendering Fix)
    ======================================================================== */
 
 // ─── Constants ────────────────────────────────────────────────────────────────
