@@ -982,7 +982,7 @@ function packEntriesIntoSubRows(entries, timeStart, slots) {
 
   sorted.forEach(entry => {
     const startIdx = Math.max(0, Math.floor((entry.startMinutes - timeStart) / SLOT_MINUTES));
-    const endIdx = Math.min(slots.length, Math.ceil((entry.endMinutes - timeStart) / SLOT_MINUTES));
+    const endIdx = Math.min(slots.length, Math.floor((entry.endMinutes - timeStart) / SLOT_MINUTES) + 1);
 
     let placed = false;
     for (let r = 0; r < subRows.length; r++) {
