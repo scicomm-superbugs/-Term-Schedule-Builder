@@ -231,12 +231,10 @@ function switchAuthTab(tab) {
   
   const gName = document.getElementById('auth-group-name');
   const gUser = document.getElementById('auth-group-username');
-  const gRole = document.getElementById('auth-group-role');
   const noticeMsg = document.getElementById('auth-notice-msg');
 
   if (gName) gName.classList.toggle('hidden', !isRegister);
   if (gUser) gUser.classList.toggle('hidden', !isRegister);
-  if (gRole) gRole.classList.toggle('hidden', !isRegister);
   if (noticeMsg) noticeMsg.style.display = isRegister ? 'block' : 'none';
 
   const emailLabel = document.getElementById('auth-email-label');
@@ -258,7 +256,7 @@ function handleAuthSubmit(e) {
   if (currentAuthTab === 'register') {
     const name = document.getElementById('auth-name').value.trim();
     const username = document.getElementById('auth-username').value.trim().toLowerCase();
-    const role = document.getElementById('auth-role').value;
+    const role = 'User';
 
     if (!name || !username || !inputEmailOrUser || !password) {
       showToast('Please fill all required fields', 'error');
@@ -275,7 +273,7 @@ function handleAuthSubmit(e) {
       name,
       username,
       email: inputEmailOrUser,
-      role,
+      role: 'User',
       password,
       approved: false, // REQUIRES ADMIN APPROVAL!
       registeredAt: new Date().toLocaleDateString()
@@ -283,7 +281,7 @@ function handleAuthSubmit(e) {
     users.push(newUser);
     syncUsersToFirebase(users);
 
-    logActivity('📝 Registered Account (Pending)', `User ${name} (@${username}) registered (${role})`, '👤');
+    logActivity('📝 Registered Account (Pending)', `User ${name} (@${username}) registered`, '👤');
     showToast(`✅ Registration submitted! Account must be approved by Admin (abdullahamr871) before signing in.`, 'info');
     closeModal('modal-auth');
     document.getElementById('auth-form').reset();
@@ -340,6 +338,72 @@ function signOutUser() {
   localStorage.removeItem('term_sched_current_user');
   updateAuthHeaderUI();
   showToast('Signed out', 'info');
+}
+
+// ─── Google Account Authentication ───────────────────────────────────────────
+function signInWithGoogle() {
+  if (typeof firebase !== 'undefined' && firebase.auth) {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    firebase.auth().signInWithPopup(provider).then((result) => {
+      processGoogleUserAuth(result.user.email, result.user.displayName);
+    }).catch((err) => {
+      console.warn("Google Auth popup skipped/failed:", err);
+      promptGoogleAuthFallback();
+    });
+  } else {
+    promptGoogleAuthFallback();
+  }
+}
+
+function promptGoogleAuthFallback() {
+  const email = prompt("🌐 Sign in with Google Account\n\nPlease enter your Google Email address (e.g. name@aiu.edu.eg):");
+  if (!email || !email.trim()) return;
+  const namePart = email.split('@')[0];
+  const displayName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+  processGoogleUserAuth(email.trim().toLowerCase(), displayName);
+}
+
+function processGoogleUserAuth(email, displayName) {
+  const cleanEmail = email.toLowerCase();
+  const username = cleanEmail.split('@')[0] || generateId();
+  const isAdminEmail = cleanEmail === 'abdullahamr871@aiu.edu.eg' || cleanEmail.includes('abdullahamr871');
+
+  let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
+  let existing = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+
+  if (!existing) {
+    existing = {
+      name: displayName || username,
+      username: username,
+      email: cleanEmail,
+      role: isAdminEmail ? 'Super Admin' : 'Faculty Member',
+      approved: isAdminEmail, // Admin auto-approved; others require Admin approval!
+      registeredAt: new Date().toLocaleDateString()
+    };
+    users.push(existing);
+    syncUsersToFirebase(users);
+  }
+
+  if (!existing.approved && !isAdminEmail) {
+    showToast(`⏳ Google Sign-In received! Account for ${existing.name} requires Admin (abdullahamr871) approval before accessing schedule tools.`, 'info');
+    logActivity('📝 Google Account (Pending)', `User ${existing.name} (${cleanEmail}) registered via Google (Pending Approval)`, '🌐');
+    closeModal('modal-auth');
+    return;
+  }
+
+  currentUser = {
+    name: existing.name,
+    username: existing.username,
+    email: existing.email,
+    role: existing.role,
+    approved: true
+  };
+
+  localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
+  logActivity('🔐 Google Signed In', `User ${currentUser.name} signed in with Google Account`, '🌐');
+  showToast(`Signed in with Google as ${currentUser.name}!`, 'success');
+  updateAuthHeaderUI();
+  closeModal('modal-auth');
 }
 
 // ─── Admin Users Management Panel ────────────────────────────────────────────
