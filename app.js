@@ -54,17 +54,21 @@ function initFirebase() {
       if (firebase.database) db = firebase.database();
       if (firebase.firestore) fsDb = firebase.firestore();
 
-      // Automatically handle Firebase Auth State changes (Google Sign-In & sessions)
       if (firebase.auth) {
         firebase.auth().onAuthStateChanged((user) => {
-          if (user && user.email) {
-            console.log("Firebase Auth State Changed:", user.email);
-            processGoogleUserAuth(user.email, user.displayName || user.email);
+          if (user) {
+            if (user.email) {
+              console.log("Firebase Auth State Changed:", user.email);
+              processGoogleUserAuth(user.email, user.displayName || user.email);
+            }
+          } else {
+            // Auto sign-in anonymously to guarantee cloud read/write permissions for all devices!
+            firebase.auth().signInAnonymously().catch(err => console.warn("Anon auth notice:", err));
           }
         });
 
         firebase.auth().getRedirectResult().then((result) => {
-          if (result && result.user) {
+          if (result && result.user && result.user.email) {
             processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
           }
         }).catch((err) => {
@@ -73,9 +77,37 @@ function initFirebase() {
       }
 
       setupRealtimeSyncListeners();
+      fetchCloudScheduleData();
     } catch(e) {
       console.warn("Firebase Sync Notice:", e);
     }
+  }
+}
+
+function fetchCloudScheduleData() {
+  if (fsDb) {
+    fsDb.collection('term_schedules').doc('active').get().then((docSnap) => {
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.scheduleData) && data.scheduleData.length >= 0) {
+          scheduleData = data.scheduleData;
+          localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+          renderGrid();
+          updateStats();
+        }
+      }
+    }).catch(err => console.warn("Cloud fetch notice:", err));
+  }
+  if (db) {
+    db.ref('term_schedule/scheduleData').get().then((snapshot) => {
+      const val = snapshot.val();
+      if (val && Array.isArray(val) && val.length >= 0) {
+        scheduleData = val;
+        localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+        renderGrid();
+        updateStats();
+      }
+    }).catch(err => console.warn("RTDB fetch notice:", err));
   }
 }
 
@@ -2183,6 +2215,11 @@ function loadData() {
       });
     }
   } catch (e) { scheduleData = []; }
+
+  // Immediately attempt cloud fetch so all devices sync to master online schedule!
+  if (typeof firebase !== 'undefined') {
+    fetchCloudScheduleData();
+  }
 }
 
 // ─── Event Listeners ─────────────────────────────────────────────────────────
