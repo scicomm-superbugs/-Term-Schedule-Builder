@@ -1015,6 +1015,19 @@ function packEntriesIntoSubRows(entries, timeStart, slots) {
   return subRows.length > 0 ? subRows : [new Array(slots.length).fill(null)];
 }
 
+function formatSlotHeaderRange(startMin) {
+  const endMin = startMin + 15;
+  const formatTime = (min) => {
+    let h = Math.floor(min / 60);
+    const m = min % 60;
+    if (h > 12) h -= 12;
+    if (h === 0) h = 12;
+    const mm = m < 10 ? '0' + m : m;
+    return `${h}:${mm}`;
+  };
+  return `${formatTime(startMin)}-${formatTime(endMin)}`;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCHEDULE TABLE RENDERER
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1047,7 +1060,7 @@ function renderGrid() {
     const th = document.createElement('th');
     th.className = 'sched-th-time';
     if (slot.start % 60 === 0) th.classList.add('on-hour');
-    th.textContent = formatSlotLabel(slot.start);
+    th.textContent = formatSlotHeaderRange(slot.start);
     trHead.appendChild(th);
   });
 
@@ -1661,11 +1674,8 @@ function exportVisualExcel() {
 
   // Time slot headers
   slots.forEach(slot => {
-    tableHtml += `<th style="width:52px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(slot.start)}</th>`;
+    tableHtml += `<th style="width:54px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #000000; color:#000000;">${formatSlotHeaderRange(slot.start)}</th>`;
   });
-
-  // 4:00 PM header cell
-  tableHtml += `<th style="width:45px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(timeEnd)}</th>`;
 
   tableHtml += `</tr></thead><tbody>`;
 
