@@ -2113,48 +2113,6 @@ function exportVisualExcel() {
           tableHtml += `</tr>`;
         });
       });
-    }+= `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
-                    <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
-                    </span><br/>
-                    <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${formattedGroup}${classNoStr}</span>
-                    </span><br/>
-                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
-                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
-                  </td>
-                `;
-              } else {
-                let rawType = entryType === 'tutorial' ? 'Tut' : 'Lab';
-                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^(Lab|Tut(orial)?)\s*/i, '');
-                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
-                  groupStr = '-' + groupStr;
-                }
-                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-
-                tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
-                    <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
-                    </span><br/>
-                    <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">${rawType}</span><span style="color:#ff0000;">${groupStr}${classNoStr}</span>
-                    </span><br/>
-                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
-                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
-                  </td>
-                `;
-              }
-              s += span;
-            } else {
-              tableHtml += `<td style="background-color:#ffffff; border-right:1px solid #e2e8f0; ${bottomBorderStyle}"></td>`;
-              s++;
-            }
-          }
-          tableHtml += `</tr>`;
-        });
-      });
     }
   });
 
