@@ -979,11 +979,12 @@ function getConflictsForEntry(entry, allEntries) {
 // ─── Parallel Sub-Row Track Packager ─────────────────────────────────────────
 function packEntriesIntoSubRows(entries, timeStart, slots) {
   const subRows = [];
+  const totalCols = slots.length + 1;
   const sorted = [...entries].sort((a, b) => a.startMinutes - b.startMinutes || (b.endMinutes - a.endMinutes));
 
   sorted.forEach(entry => {
     const startIdx = Math.max(0, Math.floor((entry.startMinutes - timeStart) / SLOT_MINUTES));
-    const endIdx = Math.min(slots.length, Math.ceil((entry.endMinutes - timeStart) / SLOT_MINUTES));
+    const endIdx = Math.min(totalCols, Math.floor((entry.endMinutes - timeStart) / SLOT_MINUTES) + 1);
 
     let placed = false;
     for (let r = 0; r < subRows.length; r++) {
@@ -1005,7 +1006,7 @@ function packEntriesIntoSubRows(entries, timeStart, slots) {
     }
 
     if (!placed) {
-      const newSlotMap = new Array(slots.length).fill(null);
+      const newSlotMap = new Array(totalCols).fill(null);
       for (let i = startIdx; i < endIdx; i++) {
         newSlotMap[i] = entry;
       }
@@ -1013,7 +1014,7 @@ function packEntriesIntoSubRows(entries, timeStart, slots) {
     }
   });
 
-  return subRows.length > 0 ? subRows : [new Array(slots.length).fill(null)];
+  return subRows.length > 0 ? subRows : [new Array(totalCols).fill(null)];
 }
 
 function formatSlotHeaderRange(startMin) {
@@ -1161,23 +1162,17 @@ function renderGrid() {
 
           // Generate time cells for this subRow
           let i = 0;
-          let coveredLastCol = false;
-          while (i < slots.length) {
+          const totalCols = slotMap.length;
+          while (i < totalCols) {
             if (slotMap[i] !== null) {
               const entry = slotMap[i];
               let span = 0;
-              while (i + span < slots.length && slotMap[i + span] === entry) {
+              while (i + span < totalCols && slotMap[i + span] === entry) {
                 span++;
               }
 
-              let extraEndSpan = 0;
-              if (i + span === slots.length && entry.endMinutes >= timeEnd) {
-                extraEndSpan = 1;
-                coveredLastCol = true;
-              }
-
               const td = document.createElement('td');
-              td.colSpan = span + extraEndSpan;
+              td.colSpan = span;
               const entryType = entry.entryType || parseComponent(entry.component).type;
               td.className = `sched-entry-cell ${entryType}`;
               td.dataset.id = entry.id;
@@ -1224,7 +1219,7 @@ function renderGrid() {
                 typeLabelHtml = `<span class="type-prefix">Tut</span><span class="type-group">${groupStr}${classNoStr}</span>`;
               }
 
-              const widthPx = (span + extraEndSpan) * 52;
+              const widthPx = span * 52;
               let innerContent = '';
               if (widthPx > 200) {
                 innerContent = `
@@ -1261,16 +1256,11 @@ function renderGrid() {
             } else {
               const td = document.createElement('td');
               td.className = 'sched-empty';
-              if (slots[i].start % 60 === 0) td.classList.add('on-hour');
+              const slotTime = i < slots.length ? slots[i].start : timeEnd;
+              if (slotTime % 60 === 0) td.classList.add('on-hour');
               tr.appendChild(td);
               i++;
             }
-          }
-
-          if (!coveredLastCol) {
-            const tdEnd = document.createElement('td');
-            tdEnd.className = 'sched-end-cell';
-            tr.appendChild(tdEnd);
           }
 
           tbody.appendChild(tr);
@@ -1746,19 +1736,13 @@ function exportVisualExcel() {
 
           // Slot mapping
           let s = 0;
-          let coveredLastColExcel = false;
-          while (s < slots.length) {
+          const totalColsExcel = slotMap.length;
+          while (s < totalColsExcel) {
             if (slotMap[s] !== null) {
               const entry = slotMap[s];
               let span = 0;
-              while (s + span < slots.length && slotMap[s + span] === entry) {
+              while (s + span < totalColsExcel && slotMap[s + span] === entry) {
                 span++;
-              }
-
-              let extraEndSpan = 0;
-              if (s + span === slots.length && entry.endMinutes >= timeEnd) {
-                extraEndSpan = 1;
-                coveredLastColExcel = true;
               }
 
               const entryType = entry.entryType || parseComponent(entry.component).type;
@@ -1782,7 +1766,7 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span + extraEndSpan}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -1802,7 +1786,7 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span + extraEndSpan}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -1819,10 +1803,6 @@ function exportVisualExcel() {
               tableHtml += `<td style="background-color:#ffffff; border-right:1px solid #e2e8f0; ${bottomBorderStyle}"></td>`;
               s++;
             }
-          }
-
-          if (!coveredLastColExcel) {
-            tableHtml += `<td style="background-color:#ffffff; border-right:none; ${bottomBorderStyle}"></td>`;
           }
           tableHtml += `</tr>`;
         });
