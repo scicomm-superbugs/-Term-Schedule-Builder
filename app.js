@@ -1,6 +1,7 @@
 /* ========================================================================
    Term Schedule Builder — Application Logic
    Horizontal timeline layout with Day → Level → Program grouping
+   Realtime Multi-Device Cloud Synchronization powered by Firebase
    ======================================================================== */
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -28,6 +29,87 @@ const DAY_COLORS = {
   'Friday':    { bg: '#c6d9f1', textColor: '#1f4e78', accent: '#1f4e78' }
 };
 
+// ─── Firebase Realtime Multi-Device Sync Engine ──────────────────────────────
+const firebaseConfig = {
+  databaseURL: "https://term-schedule-builder-default-rtdb.europe-west1.firebasedatabase.app"
+};
+
+let db = null;
+let isRemoteSyncUpdate = false;
+
+function initFirebase() {
+  if (typeof firebase !== 'undefined') {
+    try {
+      if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      db = firebase.database();
+      setupRealtimeSyncListeners();
+    } catch(e) {
+      console.warn("Firebase Realtime Sync Notice:", e);
+    }
+  }
+}
+
+function setupRealtimeSyncListeners() {
+  if (!db) return;
+
+  // 1. Realtime Timetable Schedule Sync across devices
+  db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val)) {
+      isRemoteSyncUpdate = true;
+      scheduleData = val;
+      localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+      renderGrid();
+      updateStats();
+      isRemoteSyncUpdate = false;
+    }
+  });
+
+  // 2. Realtime Registered Users Sync across devices
+  db.ref('term_schedule/users').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val)) {
+      localStorage.setItem('term_sched_users', JSON.stringify(val));
+      
+      if (currentUser) {
+        const selfInDb = val.find(u => u.username && u.username.toLowerCase() === currentUser.username.toLowerCase());
+        if (selfInDb) {
+          currentUser.approved = selfInDb.approved;
+          currentUser.role = selfInDb.role;
+          localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
+        }
+      }
+      updateAuthHeaderUI();
+
+      const adminModal = document.getElementById('modal-admin-users');
+      if (adminModal && adminModal.classList.contains('active')) {
+        renderAdminUsersTable();
+      }
+    }
+  });
+
+  // 3. Realtime Activity Audit Logs Sync across devices
+  db.ref('term_schedule/activityLogs').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val && Array.isArray(val)) {
+      localStorage.setItem('term_sched_activity_logs', JSON.stringify(val));
+      const logModal = document.getElementById('modal-activity-log');
+      if (logModal && logModal.classList.contains('active')) {
+        renderActivityLogs();
+      }
+    }
+  });
+}
+
+function syncUsersToFirebase(users) {
+  localStorage.setItem('term_sched_users', JSON.stringify(users));
+  if (db) {
+    db.ref('term_schedule/users').set(users);
+  }
+}
+
 // ─── User Accounts & Auth Engine ─────────────────────────────────────────────
 let currentUser = null;
 let currentAuthTab = 'signin';
@@ -50,7 +132,7 @@ function initAuth() {
   } else {
     users[adminIdx] = { ...SUPER_ADMIN, ...users[adminIdx], approved: true, password: 'H2CO3NaOH#' };
   }
-  localStorage.setItem('term_sched_users', JSON.stringify(users));
+  syncUsersToFirebase(users);
 
   const savedUser = localStorage.getItem('term_sched_current_user');
   if (savedUser) {
@@ -199,7 +281,7 @@ function handleAuthSubmit(e) {
       registeredAt: new Date().toLocaleDateString()
     };
     users.push(newUser);
-    localStorage.setItem('term_sched_users', JSON.stringify(users));
+    syncUsersToFirebase(users);
 
     logActivity('📝 Registered Account (Pending)', `User ${name} (@${username}) registered (${role})`, '👤');
     showToast(`✅ Registration submitted! Account must be approved by Admin (abdullahamr871) before signing in.`, 'info');
@@ -309,7 +391,7 @@ function approveUserAccount(username) {
   const u = users.find(x => x.username && x.username.toLowerCase() === username.toLowerCase());
   if (u) {
     u.approved = true;
-    localStorage.setItem('term_sched_users', JSON.stringify(users));
+    syncUsersToFirebase(users);
     logActivity('✅ Account Approved', `Admin approved account for ${u.name} (@${u.username})`, '👑');
     showToast(`Approved account for ${u.name}!`, 'success');
     renderAdminUsersTable();
@@ -325,7 +407,7 @@ function deleteUserAccount(username) {
   showConfirm(`Delete account for @${username}?`, () => {
     let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
     users = users.filter(x => x.username && x.username.toLowerCase() !== username.toLowerCase());
-    localStorage.setItem('term_sched_users', JSON.stringify(users));
+    syncUsersToFirebase(users);
     logActivity('❌ Account Deleted', `Admin deleted account @${username}`, '👑');
     showToast(`Account @${username} deleted`, 'info');
     renderAdminUsersTable();
@@ -353,6 +435,9 @@ function logActivity(action, details, icon = '📝') {
   logs.unshift(logEntry);
   if (logs.length > 200) logs.pop();
   localStorage.setItem('term_sched_activity_logs', JSON.stringify(logs));
+  if (db && !isRemoteSyncUpdate) {
+    db.ref('term_schedule/activityLogs').set(logs);
+  }
 }
 
 function openActivityLogModal() {
@@ -1886,7 +1971,12 @@ function showToast(message, type = 'info') {
 
 // ─── LocalStorage ────────────────────────────────────────────────────────────
 function saveData() {
-  try { localStorage.setItem('termScheduleData', JSON.stringify(scheduleData)); }
+  try {
+    localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+    if (db && !isRemoteSyncUpdate) {
+      db.ref('term_schedule/scheduleData').set(scheduleData);
+    }
+  }
   catch (e) { console.warn('Save failed:', e); }
 }
 
@@ -2031,6 +2121,7 @@ function init() {
   renderGrid();
   initEventListeners();
   updateComponentPreview();
+  initFirebase();
 }
 
 document.addEventListener('DOMContentLoaded', init);
