@@ -32,17 +32,41 @@ const DAY_COLORS = {
 let currentUser = null;
 let currentAuthTab = 'signin';
 
+const SUPER_ADMIN = {
+  username: 'abdullahamr871',
+  email: 'abdullahamr871@aiu.edu.eg',
+  name: 'Abdullah Amr Maged',
+  password: 'H2CO3NaOH#',
+  role: 'Super Admin',
+  approved: true
+};
+
 function initAuth() {
+  // Ensure Super Admin exists in users list
+  let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
+  const adminIdx = users.findIndex(u => u.username && u.username.toLowerCase() === 'abdullahamr871');
+  if (adminIdx === -1) {
+    users.unshift(SUPER_ADMIN);
+  } else {
+    users[adminIdx] = { ...SUPER_ADMIN, ...users[adminIdx], approved: true, password: 'H2CO3NaOH#' };
+  }
+  localStorage.setItem('term_sched_users', JSON.stringify(users));
+
   const savedUser = localStorage.getItem('term_sched_current_user');
   if (savedUser) {
-    try { currentUser = JSON.parse(savedUser); } catch(e) { currentUser = null; }
-  } else {
-    currentUser = {
-      name: 'Abdullah Amr Maged',
-      email: 'abdullah@aiu.edu.eg',
-      role: 'Scheduler / Admin'
-    };
-    localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
+    try {
+      const parsed = JSON.parse(savedUser);
+      // Re-verify if approved in users db
+      const dbUser = users.find(u => u.username && u.username.toLowerCase() === parsed.username.toLowerCase());
+      if (dbUser && dbUser.approved) {
+        currentUser = { name: dbUser.name, username: dbUser.username, email: dbUser.email, role: dbUser.role, approved: true };
+      } else {
+        currentUser = null;
+        localStorage.removeItem('term_sched_current_user');
+      }
+    } catch(e) {
+      currentUser = null;
+    }
   }
   updateAuthHeaderUI();
 }
@@ -51,25 +75,63 @@ function getCurrentUser() {
   return currentUser;
 }
 
+function requireAuth(actionLabel = 'make changes') {
+  if (!currentUser) {
+    showToast(`🔐 Authentication required to ${actionLabel}. Please sign in.`, 'error');
+    openAuthModal('signin');
+    return false;
+  }
+  if (!currentUser.approved) {
+    showToast(`⏳ Account Pending Approval. Contact Admin (abdullahamr871) to approve your account.`, 'error');
+    return false;
+  }
+  return true;
+}
+
 function updateAuthHeaderUI() {
   const container = document.getElementById('auth-header-container');
   if (!container) return;
 
+  const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
+  const pendingCount = users.filter(u => !u.approved).length;
+
   if (currentUser) {
+    const isAdmin = currentUser.username && currentUser.username.toLowerCase() === 'abdullahamr871';
+    const adminBtn = isAdmin ? `
+      <button class="btn btn-xs btn-warning" onclick="openAdminUsersModal()" style="font-size:0.7rem; padding:2px 8px;" title="Manage user accounts & approvals">
+        👑 Accounts ${pendingCount > 0 ? `<span style="background:#ef4444; color:#fff; padding:1px 5px; border-radius:10px; font-weight:800;">${pendingCount}</span>` : ''}
+      </button>
+    ` : '';
+
     container.innerHTML = `
       <div style="display:flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 10px; border-radius:20px; border:1px solid #cbd5e1; font-size:0.75rem;">
         <span style="font-weight:800; color:#1e293b;">👤 ${currentUser.name}</span>
         <span style="font-size:0.65rem; background:#dbeafe; color:#1e3a8a; padding:1px 6px; border-radius:10px; font-weight:700;">${currentUser.role || 'User'}</span>
-        <button onclick="signOutUser()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:0.75rem; margin-left:4px;" title="Sign Out">✕</button>
+        ${adminBtn}
+        <button onclick="signOutUser()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:0.75rem; margin-left:2px;" title="Sign Out">✕</button>
       </div>
     `;
   } else {
     container.innerHTML = `
-      <button class="btn btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem;">
+      <button class="btn btn-primary btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem; font-weight:700;">
         <span>🔐</span> Sign In
       </button>
     `;
   }
+
+  // Update header buttons visual disabled state if signed out
+  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-activity-log', 'btn-import-schedule', 'btn-add', 'btn-clear'];
+  actionButtons.forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) {
+      if (!currentUser) {
+        btn.style.opacity = '0.7';
+        btn.title = '🔐 Sign In required to use this action';
+      } else {
+        btn.style.opacity = '1';
+      }
+    }
+  });
 }
 
 function openAuthModal(tab = 'signin') {
@@ -86,67 +148,106 @@ function switchAuthTab(tab) {
   if (tabRegister) tabRegister.classList.toggle('active', isRegister);
   
   const gName = document.getElementById('auth-group-name');
+  const gUser = document.getElementById('auth-group-username');
   const gRole = document.getElementById('auth-group-role');
+  const noticeMsg = document.getElementById('auth-notice-msg');
+
   if (gName) gName.classList.toggle('hidden', !isRegister);
+  if (gUser) gUser.classList.toggle('hidden', !isRegister);
   if (gRole) gRole.classList.toggle('hidden', !isRegister);
-  
+  if (noticeMsg) noticeMsg.style.display = isRegister ? 'block' : 'none';
+
+  const emailLabel = document.getElementById('auth-email-label');
+  if (emailLabel) emailLabel.textContent = isRegister ? 'Email Address' : 'Username or Email';
+
   const modalTitle = document.getElementById('auth-modal-title');
-  if (modalTitle) modalTitle.textContent = isRegister ? '📝 Create User Account' : '🔐 Sign In to Schedule Builder';
+  if (modalTitle) modalTitle.textContent = isRegister ? '📝 Register New Account' : '🔐 Sign In to Schedule Builder';
   const btnSubmit = document.getElementById('btn-auth-submit');
   if (btnSubmit) btnSubmit.textContent = isRegister ? 'Register Account' : 'Sign In';
 }
 
 function handleAuthSubmit(e) {
   e.preventDefault();
-  const email = document.getElementById('auth-email').value.trim();
+  const inputEmailOrUser = document.getElementById('auth-email').value.trim().toLowerCase();
   const password = document.getElementById('auth-password').value.trim();
+
+  const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
 
   if (currentAuthTab === 'register') {
     const name = document.getElementById('auth-name').value.trim();
+    const username = document.getElementById('auth-username').value.trim().toLowerCase();
     const role = document.getElementById('auth-role').value;
-    if (!name || !email || !password) {
+
+    if (!name || !username || !inputEmailOrUser || !password) {
       showToast('Please fill all required fields', 'error');
       return;
     }
 
-    const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
-    const existing = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const existing = users.find(u => (u.username && u.username.toLowerCase() === username) || (u.email && u.email.toLowerCase() === inputEmailOrUser));
     if (existing) {
-      showToast('An account with this email already exists', 'error');
+      showToast('An account with this username or email already exists', 'error');
       return;
     }
 
-    const newUser = { name, email, role, password };
+    const newUser = {
+      name,
+      username,
+      email: inputEmailOrUser,
+      role,
+      password,
+      approved: false, // REQUIRES ADMIN APPROVAL!
+      registeredAt: new Date().toLocaleDateString()
+    };
     users.push(newUser);
     localStorage.setItem('term_sched_users', JSON.stringify(users));
 
-    currentUser = { name, email, role };
-    localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
-    logActivity('📝 Registered Account', `User ${name} registered an account (${role})`, '👤');
-    showToast(`Welcome, ${name}! Account created.`, 'success');
+    logActivity('📝 Registered Account (Pending)', `User ${name} (@${username}) registered (${role})`, '👤');
+    showToast(`✅ Registration submitted! Account must be approved by Admin (abdullahamr871) before signing in.`, 'info');
+    closeModal('modal-auth');
+    document.getElementById('auth-form').reset();
+    updateAuthHeaderUI();
   } else {
-    if (!email || !password) {
-      showToast('Email and password required', 'error');
+    if (!inputEmailOrUser || !password) {
+      showToast('Username/Email and password required', 'error');
       return;
     }
-    const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
-    const found = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
 
-    if (found) {
-      currentUser = { name: found.name, email: found.email, role: found.role };
-    } else {
-      const namePart = email.split('@')[0];
-      const displayName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-      currentUser = { name: displayName, email, role: 'Scheduler / Admin' };
+    // Check Super Admin credentials
+    if ((inputEmailOrUser === 'abdullahamr871' || inputEmailOrUser === 'abdullahamr871@aiu.edu.eg') && password === 'H2CO3NaOH#') {
+      currentUser = { name: SUPER_ADMIN.name, username: SUPER_ADMIN.username, email: SUPER_ADMIN.email, role: SUPER_ADMIN.role, approved: true };
+      localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
+      logActivity('🔐 Admin Signed In', `Admin ${currentUser.name} signed in`, '👑');
+      showToast(`Welcome back Admin, ${currentUser.name}!`, 'success');
+      updateAuthHeaderUI();
+      closeModal('modal-auth');
+      document.getElementById('auth-form').reset();
+      return;
     }
-    localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
-    logActivity('🔐 Signed In', `User ${currentUser.name} signed in`, '🔐');
-    showToast(`Signed in as ${currentUser.name}`, 'success');
-  }
 
-  updateAuthHeaderUI();
-  closeModal('modal-auth');
-  document.getElementById('auth-form').reset();
+    const found = users.find(u => 
+      ((u.username && u.username.toLowerCase() === inputEmailOrUser) || (u.email && u.email.toLowerCase() === inputEmailOrUser)) && 
+      u.password === password
+    );
+
+    if (!found) {
+      showToast('Invalid username/email or password', 'error');
+      return;
+    }
+
+    if (!found.approved) {
+      showToast('⏳ Account Pending Approval. Contact Admin (abdullahamr871) to approve your account.', 'error');
+      return;
+    }
+
+    currentUser = { name: found.name, username: found.username, email: found.email, role: found.role, approved: true };
+    localStorage.setItem('term_sched_current_user', JSON.stringify(currentUser));
+    logActivity('🔐 Signed In', `User ${currentUser.name} (@${currentUser.username}) signed in`, '🔐');
+    showToast(`Signed in as ${currentUser.name}`, 'success');
+
+    updateAuthHeaderUI();
+    closeModal('modal-auth');
+    document.getElementById('auth-form').reset();
+  }
 }
 
 function signOutUser() {
@@ -157,6 +258,79 @@ function signOutUser() {
   localStorage.removeItem('term_sched_current_user');
   updateAuthHeaderUI();
   showToast('Signed out', 'info');
+}
+
+// ─── Admin Users Management Panel ────────────────────────────────────────────
+function openAdminUsersModal() {
+  if (!currentUser || currentUser.username.toLowerCase() !== 'abdullahamr871') {
+    showToast('Only Super Admin (abdullahamr871) can manage accounts', 'error');
+    return;
+  }
+  renderAdminUsersTable();
+  openModal('modal-admin-users');
+}
+
+function renderAdminUsersTable() {
+  const tbody = document.getElementById('admin-users-tbody');
+  if (!tbody) return;
+
+  const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
+
+  tbody.innerHTML = users.map(u => {
+    const isSuperAdmin = u.username && u.username.toLowerCase() === 'abdullahamr871';
+    const statusHtml = u.approved
+      ? `<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-weight:800; font-size:0.7rem;">✅ Approved</span>`
+      : `<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:800; font-size:0.7rem;">⏳ Pending Approval</span>`;
+
+    const actionHtml = isSuperAdmin ? `<span style="font-size:0.7rem; color:#64748b; font-weight:700;">(Super Admin)</span>` : `
+      <div style="display:flex; gap:4px; justify-content:center;">
+        ${!u.approved ? `<button class="btn btn-xs btn-success" onclick="approveUserAccount('${u.username}')" style="font-size:0.68rem; padding:2px 6px;">✅ Approve</button>` : ''}
+        <button class="btn btn-xs btn-danger" onclick="deleteUserAccount('${u.username}')" style="font-size:0.68rem; padding:2px 6px;">❌ Delete</button>
+      </div>
+    `;
+
+    return `
+      <tr>
+        <td style="font-weight:700; color:#1e293b;">${u.name}</td>
+        <td style="font-size:0.75rem; color:#475569;">
+          <div style="font-weight:700; color:#0f172a;">@${u.username}</div>
+          <div style="font-size:0.68rem; color:#94a3b8;">${u.email}</div>
+        </td>
+        <td style="font-size:0.75rem; color:#334155; font-weight:600;">${u.role}</td>
+        <td>${statusHtml}</td>
+        <td style="text-align:center;">${actionHtml}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function approveUserAccount(username) {
+  let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
+  const u = users.find(x => x.username && x.username.toLowerCase() === username.toLowerCase());
+  if (u) {
+    u.approved = true;
+    localStorage.setItem('term_sched_users', JSON.stringify(users));
+    logActivity('✅ Account Approved', `Admin approved account for ${u.name} (@${u.username})`, '👑');
+    showToast(`Approved account for ${u.name}!`, 'success');
+    renderAdminUsersTable();
+    updateAuthHeaderUI();
+  }
+}
+
+function deleteUserAccount(username) {
+  if (username.toLowerCase() === 'abdullahamr871') {
+    showToast('Cannot delete Super Admin account', 'error');
+    return;
+  }
+  showConfirm(`Delete account for @${username}?`, () => {
+    let users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
+    users = users.filter(x => x.username && x.username.toLowerCase() !== username.toLowerCase());
+    localStorage.setItem('term_sched_users', JSON.stringify(users));
+    logActivity('❌ Account Deleted', `Admin deleted account @${username}`, '👑');
+    showToast(`Account @${username} deleted`, 'info');
+    renderAdminUsersTable();
+    updateAuthHeaderUI();
+  });
 }
 
 // ─── Activity Audit Log System ───────────────────────────────────────────────
@@ -771,6 +945,7 @@ function renderGrid() {
 
               td.addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (!requireAuth('view or modify schedule entries')) return;
                 showEntryPopup(entry, td);
               });
 
@@ -1734,16 +1909,34 @@ function loadData() {
 
 // ─── Event Listeners ─────────────────────────────────────────────────────────
 function initEventListeners() {
-  document.getElementById('btn-import').addEventListener('click', () => { resetImportModal(); openModal('modal-import'); });
-  document.getElementById('btn-export').addEventListener('click', exportCSV);
+  document.getElementById('btn-import').addEventListener('click', () => {
+    if (!requireAuth('import SIS data')) return;
+    resetImportModal();
+    openModal('modal-import');
+  });
+
+  document.getElementById('btn-export').addEventListener('click', () => {
+    if (!requireAuth('export SIS data')) return;
+    exportCSV();
+  });
   
   const btnExportVisual = document.getElementById('btn-export-visual');
-  if (btnExportVisual) btnExportVisual.addEventListener('click', exportVisualExcel);
+  if (btnExportVisual) btnExportVisual.addEventListener('click', () => {
+    if (!requireAuth('export visual schedule')) return;
+    exportVisualExcel();
+  });
 
   const btnImportSchedule = document.getElementById('btn-import-schedule');
-  if (btnImportSchedule) btnImportSchedule.addEventListener('click', importScheduleState);
+  if (btnImportSchedule) btnImportSchedule.addEventListener('click', () => {
+    if (!requireAuth('import schedule state')) return;
+    importScheduleState();
+  });
+
   const btnActivityLog = document.getElementById('btn-activity-log');
-  if (btnActivityLog) btnActivityLog.addEventListener('click', openActivityLogModal);
+  if (btnActivityLog) btnActivityLog.addEventListener('click', () => {
+    if (!requireAuth('view activity log')) return;
+    openActivityLogModal();
+  });
 
   const btnCloseAct = document.getElementById('btn-close-activity');
   if (btnCloseAct) btnCloseAct.addEventListener('click', () => closeModal('modal-activity-log'));
@@ -1754,13 +1947,24 @@ function initEventListeners() {
   const btnCloseAuth = document.getElementById('btn-close-auth');
   if (btnCloseAuth) btnCloseAuth.addEventListener('click', () => closeModal('modal-auth'));
 
+  const btnCloseAdminUsers = document.getElementById('btn-close-admin-users');
+  if (btnCloseAdminUsers) btnCloseAdminUsers.addEventListener('click', () => closeModal('modal-admin-users'));
+
+  const btnCloseAdminUsersFooter = document.getElementById('btn-close-admin-users-footer');
+  if (btnCloseAdminUsersFooter) btnCloseAdminUsersFooter.addEventListener('click', () => closeModal('modal-admin-users'));
+
   const authForm = document.getElementById('auth-form');
   if (authForm) authForm.addEventListener('submit', handleAuthSubmit);
 
-  document.getElementById('btn-add').addEventListener('click', () => { resetEntryForm(); openModal('modal-entry'); });
+  document.getElementById('btn-add').addEventListener('click', () => {
+    if (!requireAuth('add schedule entry')) return;
+    resetEntryForm();
+    openModal('modal-entry');
+  });
 
   // Clear handler with activity logging
   document.getElementById('btn-clear').addEventListener('click', () => {
+    if (!requireAuth('clear schedule')) return;
     if (scheduleData.length === 0) { showToast('Schedule is already empty', 'info'); return; }
     showConfirm(`Clear all ${scheduleData.length} entries?`, () => {
       const count = scheduleData.length;

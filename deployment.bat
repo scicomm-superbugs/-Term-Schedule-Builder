@@ -28,6 +28,7 @@ echo [4/5] Staging and committing files...
 echo [5/5] Pushing code to GitHub...
 "%GIT_PATH%" push -u origin main --force
 "%GIT_PATH%" push -u origin main:master --force
+"%GIT_PATH%" push -u origin main:gh-pages --force
 
 echo.
 echo ===================================================

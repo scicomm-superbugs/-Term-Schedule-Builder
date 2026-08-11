@@ -430,9 +430,13 @@
             <label class="form-label" for="auth-name">Full Name</label>
             <input class="form-input" type="text" id="auth-name" placeholder="e.g. Dr. Abdullah Amr" />
           </div>
+          <div class="form-group hidden" id="auth-group-username">
+            <label class="form-label" for="auth-username">Desired Username</label>
+            <input class="form-input" type="text" id="auth-username" placeholder="e.g. abdullah871" />
+          </div>
           <div class="form-group">
-            <label class="form-label" for="auth-email">Email Address</label>
-            <input class="form-input" type="email" id="auth-email" placeholder="name@aiu.edu.eg" required />
+            <label class="form-label" id="auth-email-label" for="auth-email">Username or Email</label>
+            <input class="form-input" type="text" id="auth-email" placeholder="abdullahamr871 or email@aiu.edu.eg" required />
           </div>
           <div class="form-group">
             <label class="form-label" for="auth-password">Password</label>
@@ -446,8 +450,47 @@
               <option value="Teaching Assistant">Teaching Assistant</option>
             </select>
           </div>
+          <div id="auth-notice-msg" style="font-size:0.75rem; color:#d97706; font-weight:600; margin-top:8px; display:none;">
+            ⏳ Note: Registered accounts require Admin approval before you can sign in.
+          </div>
           <button type="submit" class="btn btn-primary" id="btn-auth-submit" style="width:100%; margin-top:12px;">Sign In</button>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       MODAL: Admin User Management & Approvals
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="modal-admin-users" class="modal-overlay">
+    <div class="modal" style="max-width:780px;">
+      <div class="modal-header">
+        <h2>👑 Admin Account Management & Approvals</h2>
+        <button class="modal-close" id="btn-close-admin-users">×</button>
+      </div>
+      <div class="modal-body" style="padding:16px;">
+        <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:12px;">
+          Review registered user accounts. New accounts require your Admin approval before they can sign in.
+        </div>
+        <div style="max-height:380px; overflow-y:auto; border:1px solid var(--border-light); border-radius:8px;">
+          <table class="import-table" style="width:100%;">
+            <thead>
+              <tr>
+                <th>User Details</th>
+                <th>Username / Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th style="width:130px; text-align:center;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="admin-users-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btn-close-admin-users-footer">Close</button>
       </div>
     </div>
   </div>
