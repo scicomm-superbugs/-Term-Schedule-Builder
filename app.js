@@ -406,45 +406,35 @@ function signOutUser() {
   window.location.reload();
 }
 
-// ─── Google Account Authentication ───────────────────────────────────────────
+// ─── Google Account Authentication (Pure Firebase Auth) ────────────────────────
 function signInWithGoogle() {
-  if (typeof firebase !== 'undefined' && firebase.auth) {
-    try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      provider.addScope('email');
-      provider.addScope('profile');
-
-      firebase.auth().signInWithPopup(provider).then((result) => {
-        if (result && result.user) {
-          processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
-        } else {
-          promptGoogleAuthFallback();
-        }
-      }).catch((err) => {
-        console.warn("Google Auth popup notice:", err);
-        if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
-          showToast('Opening Google Sign-In redirect...', 'info');
-          firebase.auth().signInWithRedirect(provider);
-        } else {
-          promptGoogleAuthFallback();
-        }
-      });
-    } catch(e) {
-      console.warn("Google Auth exception:", e);
-      promptGoogleAuthFallback();
-    }
-  } else {
-    promptGoogleAuthFallback();
+  if (typeof firebase === 'undefined' || !firebase.auth) {
+    showToast('Firebase Auth is initializing. Please try again.', 'error');
+    return;
   }
-}
 
-function promptGoogleAuthFallback() {
-  const email = prompt("🌐 Google Account Sign In\n\nPlease enter your Google email address:");
-  if (!email || !email.trim()) return;
-  const cleanEmail = email.trim().toLowerCase();
-  const namePart = cleanEmail.split('@')[0];
-  const displayName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-  processGoogleUserAuth(cleanEmail, displayName);
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('email');
+    provider.addScope('profile');
+
+    firebase.auth().signInWithPopup(provider).then((result) => {
+      if (result && result.user) {
+        processGoogleUserAuth(result.user.email, result.user.displayName || result.user.email);
+      }
+    }).catch((err) => {
+      console.warn("Firebase Google Auth notice:", err);
+      if (err.code === 'auth/popup-blocked') {
+        showToast('Opening Google Sign-In via redirect...', 'info');
+        firebase.auth().signInWithRedirect(provider);
+      } else if (err.code !== 'auth/popup-closed-by-user') {
+        showToast(`Google Sign-In notice: ${err.message}`, 'error');
+      }
+    });
+  } catch(e) {
+    console.error("Firebase Google Auth Exception:", e);
+    showToast('Unable to connect to Google Auth Service.', 'error');
+  }
 }
 
 function processGoogleUserAuth(email, displayName) {
