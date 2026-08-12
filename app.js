@@ -1857,8 +1857,10 @@ function exportVisualExcel() {
                 const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
+                const dataAttrs = ` data-component="${entry.component || ''}" data-entry-type="${entryType}" data-class-no="${entry.classNo || ''}" data-instructor="${(entry.instructor || '').replace(/"/g, '&quot;')}" data-facility-id="${entry.facilityId || ''}" data-capacity="${entry.capacity || ''}" data-course-name="${(entry.courseName || '').replace(/"/g, '&quot;')}" data-course-code="${entry.courseCode || ''}" data-association="${entry.association || '1'}"`;
+
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}"${dataAttrs} style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -1877,8 +1879,10 @@ function exportVisualExcel() {
                 }
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
+                const dataAttrs = ` data-component="${entry.component || ''}" data-entry-type="${entryType}" data-class-no="${entry.classNo || ''}" data-instructor="${(entry.instructor || '').replace(/"/g, '&quot;')}" data-facility-id="${entry.facilityId || ''}" data-capacity="${entry.capacity || ''}" data-course-name="${(entry.courseName || '').replace(/"/g, '&quot;')}" data-course-code="${entry.courseCode || ''}" data-association="${entry.association || '1'}"`;
+
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}"${dataAttrs} style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -2104,10 +2108,45 @@ function importVisualExcelFile(file) {
           // Skip empty cells
           if (!txt || txt === '—' || txt === '-') { c += cs; continue; }
 
-          // Check if this cell contains a course code
+          // Check if this cell contains a course code (either from data attr or text)
+          const hasDataAttrs = td.hasAttribute('data-component');
           const courseCodeMatch = td.innerHTML.match(/([A-Z]{2,4}\s*\d{3})/i) || txt.match(/([A-Z]{2,4}\s*\d{3})/i);
-          if (!courseCodeMatch) { c += cs; continue; }
+          if (!courseCodeMatch && !hasDataAttrs) { c += cs; continue; }
 
+          // ─── Data-attribute path (exact round-trip from our own export) ───
+          if (hasDataAttrs) {
+            const courseCode = (td.getAttribute('data-course-code') || courseCodeMatch?.[1] || '').replace(/\s+/g, '').toUpperCase();
+            if (!courseCode) { c += cs; continue; }
+
+            // Calculate start & end minutes from true grid column position
+            let startMin = colToMinutes[c];
+            let endMin = colToMinutes[c + cs - 1];
+            if (startMin === null || startMin === undefined) startMin = 540 + Math.max(0, c - 2) * 15;
+            if (endMin === null || endMin === undefined) endMin = startMin + cs * 15;
+
+            importedEntries.push({
+              id: generateId(),
+              day: currentDay,
+              level: currentLevel,
+              program: currentProgram,
+              courseCode: courseCode,
+              courseName: td.getAttribute('data-course-name') || '',
+              component: td.getAttribute('data-component') || 'L1S',
+              entryType: td.getAttribute('data-entry-type') || 'lecture',
+              classNo: td.getAttribute('data-class-no') || '',
+              facilityId: td.getAttribute('data-facility-id') || '',
+              capacity: td.getAttribute('data-capacity') || '',
+              instructor: td.getAttribute('data-instructor') || '',
+              startMinutes: startMin,
+              endMinutes: endMin,
+              association: td.getAttribute('data-association') || '1'
+            });
+
+            c += cs;
+            continue;
+          }
+
+          // ─── Regex fallback path (for files not exported by our tool) ───
           const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
 
           // Split cell content into distinct lines to parse line-by-line
@@ -2134,8 +2173,6 @@ function importVisualExcelFile(file) {
           let endColIdx = c + cs - 1;
           let endMin = colToMinutes[endColIdx];
 
-          // If the end column is the last time slot, use end = start of that slot + 15
-          // Otherwise endMin is the start of the last spanned column
           if (startMin === null || startMin === undefined) {
             startMin = 540 + Math.max(0, c - 2) * 15;
           }
