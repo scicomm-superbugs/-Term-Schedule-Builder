@@ -1311,6 +1311,131 @@ body {
   .type-selector { flex-direction: column; }
 }
 
+/* ── Unscheduled & Special Entries Panel ─────────────────────────────── */
+.unscheduled-section-container {
+  margin-top: 24px;
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.unscheduled-header {
+  margin-bottom: 14px;
+}
+
+.unscheduled-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.unscheduled-badge {
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.unscheduled-sub {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 2px;
+  display: block;
+}
+
+.unscheduled-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.unscheduled-card {
+  border-radius: 8px;
+  padding: 12px 14px;
+  border-left: 4px solid #3b82f6;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.unscheduled-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.unscheduled-card.lec-card {
+  background: #eff6ff;
+  border-left-color: #3b82f6;
+}
+
+.unscheduled-card.lab-card {
+  background: #fef2f2;
+  border-left-color: #ef4444;
+}
+
+.unscheduled-card.tut-card {
+  background: #fff7ed;
+  border-left-color: #f97316;
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.card-code {
+  font-weight: 800;
+  font-size: 0.88rem;
+  color: #0f172a;
+}
+
+.card-type-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.card-type-tag.lecture { background: #dbeafe; color: #1e40af; }
+.card-type-tag.lab { background: #fee2e2; color: #991b1b; }
+.card-type-tag.tutorial { background: #ffedd5; color: #9a3412; }
+
+.card-name {
+  font-size: 0.78rem;
+  color: #334155;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.card-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 3px;
+}
+
+.card-class-no, .card-notes {
+  font-size: 0.7rem;
+  color: #475569;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 @media (max-width: 480px) {
   html { font-size: 13px; }
   .app { padding: 0 10px 20px; }

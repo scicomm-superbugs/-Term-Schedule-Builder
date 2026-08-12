@@ -1274,7 +1274,94 @@ function renderGrid() {
 
   table.appendChild(tbody);
   container.appendChild(table);
+
+  const validDaysLower = DAYS.map(d => d.toLowerCase());
+  const unscheduledEntries = scheduleData.filter(e => {
+    if (!e.day || !validDaysLower.includes(e.day.toLowerCase())) return true;
+    if (e.startMinutes === null || e.startMinutes === undefined || isNaN(e.startMinutes)) return true;
+    if (e.endMinutes === null || e.endMinutes === undefined || isNaN(e.endMinutes)) return true;
+    return false;
+  });
+
+  renderUnscheduledSection(unscheduledEntries);
   updateStats();
+}
+
+function renderUnscheduledSection(entries) {
+  let container = document.getElementById('unscheduled-section');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'unscheduled-section';
+    container.className = 'unscheduled-section-container';
+    const gridContainer = document.getElementById('grid-container');
+    if (gridContainer && gridContainer.parentNode) {
+      gridContainer.parentNode.insertBefore(container, gridContainer.nextSibling);
+    }
+  }
+
+  if (!entries || entries.length === 0) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+  let html = `
+    <div class="unscheduled-header">
+      <div class="unscheduled-title">
+        <span class="icon">📌</span>
+        <span>Unscheduled, Flexible & Special Entries</span>
+        <span class="unscheduled-badge">${entries.length}</span>
+      </div>
+      <span class="unscheduled-sub">Entries without specific timetable slots (e.g. TBA, Online, Flexible or Unscheduled)</span>
+    </div>
+    <div class="unscheduled-grid">
+  `;
+
+  entries.forEach(e => {
+    const entryType = e.entryType || parseComponent(e.component).type;
+    const dayLabel = e.day || 'TBA';
+    const timeLabel = (e.startMinutes !== null && e.startMinutes !== undefined && !isNaN(e.startMinutes))
+      ? `${minutesToTimeString(e.startMinutes)} - ${minutesToTimeString(e.endMinutes)}`
+      : 'Time: TBA / Flexible';
+
+    const bgClass = entryType === 'lecture' ? 'lec-card' : entryType === 'lab' ? 'lab-card' : 'tut-card';
+
+    html += `
+      <div class="unscheduled-card ${bgClass}" data-id="${e.id}">
+        <div class="card-top">
+          <span class="card-code">${e.courseCode}</span>
+          <span class="card-type-tag ${entryType}">${entryType.toUpperCase()}</span>
+        </div>
+        <div class="card-name">${e.courseName || e.component || '—'}</div>
+        <div class="card-meta">
+          <span>📅 ${dayLabel}</span>
+          <span>🕐 ${timeLabel}</span>
+        </div>
+        <div class="card-meta">
+          <span>👤 ${e.instructor || '—'}</span>
+          <span>📍 ${e.facilityId || 'TBA'}${e.capacity ? ` (${e.capacity})` : ''}</span>
+        </div>
+        ${e.classNo ? `<div class="card-class-no">Class No: ${e.classNo}</div>` : ''}
+        ${e.notes ? `<div class="card-notes">📝 ${e.notes}</div>` : ''}
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+
+  container.querySelectorAll('.unscheduled-card').forEach(card => {
+    card.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (!requireAuth('view or modify schedule entries')) return;
+      const id = card.dataset.id;
+      const entry = scheduleData.find(item => item.id === id);
+      if (entry) {
+        showEntryPopup(entry, card);
+      }
+    });
+  });
 }
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
@@ -1536,10 +1623,13 @@ function parseCSV(text) {
     };
 
     const component = getValue('component');
+    const courseCode = getValue('courseCode');
+    if (!component && !courseCode) continue;
+
     const parsed = parseComponent(component);
     const startMin = parseTimeString(getValue('mtgStart'));
     const endMin = parseTimeString(getValue('mtgEnd'));
-    if (startMin === null || endMin === null) continue;
+    const dayVal = getValue('day') || 'TBA';
 
     // Try to match program from CSV
     let program = getValue('program').toLowerCase();
@@ -1553,16 +1643,16 @@ function parseCSV(text) {
     entries.push({
       id: generateId(),
       level: getValue('level') || '1',
-      courseCode: getValue('courseCode'),
+      courseCode: courseCode || 'COURSE',
       courseName: getValue('courseName'),
-      component,
+      component: component || 'Lec 1',
       entryType: parsed.type,
       association: getValue('association'),
       classNo: getValue('classNo'),
       facilityId: getValue('facilityId'),
       startMinutes: startMin,
       endMinutes: endMin,
-      day: capitalizeDay(getValue('day')),
+      day: capitalizeDay(getValue('day')) || 'TBA',
       capacity: getValue('capacity'),
       instructor: getValue('instructor'),
       program
