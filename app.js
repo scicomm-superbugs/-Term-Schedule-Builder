@@ -143,7 +143,7 @@ function setupRealtimeSyncListeners() {
   db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
     const val = snapshot.val();
     isRemoteSyncUpdate = true;
-    scheduleData = (val && Array.isArray(val)) ? val.map(normalizeComponentAndAssociation) : [];
+    scheduleData = (val && Array.isArray(val)) ? val : [];
     localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
     renderGrid();
     updateStats();
@@ -736,169 +736,23 @@ function generateId() {
   return 'e_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-// ─── Component & Association Standardization (Official SIS Rules) ───────────
-function normalizeComponentAndAssociation(entry) {
-  if (!entry) return entry;
-
-  let entryType = entry.entryType || 'lecture';
-  let rawComp = (entry.component || '').trim();
-  let rawAssoc = (entry.association || '').toString().trim();
-
-  // Infer entryType from component if not explicit
-  if (/Lab/i.test(rawComp)) entryType = 'lab';
-  else if (/Tut/i.test(rawComp)) entryType = 'tutorial';
-
-  if (entryType === 'lecture') {
-    // Lecture components MUST be L1S, L2S, L3S, L4S...
-    // Association MUST be 1, 2, 3, 4...
-    let groupNum = 1;
-    const gMatch = rawComp.match(/L(\d+)S/i)
-      || rawComp.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i)
-      || rawComp.match(/(?:Lec|Lecture|L)\s*[-_:]?\s*(\d+)/i)
-      || rawComp.match(/^(\d+)$/);
-
-    if (gMatch) {
-      groupNum = parseInt(gMatch[1] || gMatch[2], 10) || 1;
-    } else if (rawAssoc && /^\d+$/.test(rawAssoc)) {
-      groupNum = parseInt(rawAssoc, 10) || 1;
-    }
-
-    entry.component = `L${groupNum}S`;
-    entry.association = String(groupNum);
-    entry.entryType = 'lecture';
-  } else {
-    // Lab/Tutorial components MUST be B1S, B2S, B3S, B4S...
-    // B1S = Group 1A -> Parent 1, Sub A, Assoc 1
-    // B2S = Group 1B -> Parent 1, Sub B, Assoc 1
-    // B3S = Group 2A -> Parent 2, Sub A, Assoc 2
-    // B4S = Group 2B -> Parent 2, Sub B, Assoc 2
-    // B5S = Group 3A -> Parent 3, Sub A, Assoc 3
-    // B6S = Group 3B -> Parent 3, Sub B, Assoc 3
-    // B7S = Group 4A -> Parent 4, Sub A, Assoc 4
-    // B8S = Group 4B -> Parent 4, Sub B, Assoc 4
-    // Association MUST be 1, 2, 3, 4 (WITHOUT A or B!)
-
-    let bIndex = 1;
-    let parentGroup = 1;
-
-    const bMatch = rawComp.match(/^B(\d+)S$/i);
-    if (bMatch) {
-      bIndex = parseInt(bMatch[1], 10);
-      parentGroup = Math.ceil(bIndex / 2);
-    } else {
-      const groupMatch = rawComp.match(/Group\s*(\d+)\s*([AB])?/i)
-        || rawComp.match(/(?:Lab|Tut|Tutorial|B)\s*[-_:]?\s*(\d+)\s*([AB])?/i)
-        || rawComp.match(/^(\d+)\s*([AB])?$/i);
-
-      if (groupMatch) {
-        parentGroup = parseInt(groupMatch[1], 10) || 1;
-        const subLetter = (groupMatch[2] || 'A').toUpperCase();
-        bIndex = (parentGroup - 1) * 2 + (subLetter === 'A' ? 1 : 2);
-      } else if (rawAssoc) {
-        const assocNumMatch = rawAssoc.match(/(\d+)\s*([AB])?/i);
-        if (assocNumMatch) {
-          parentGroup = parseInt(assocNumMatch[1], 10) || 1;
-          const subLetter = (assocNumMatch[2] || 'A').toUpperCase();
-          bIndex = (parentGroup - 1) * 2 + (subLetter === 'A' ? 1 : 2);
-        }
-      }
-    }
-
-    entry.component = `B${bIndex}S`;
-    entry.association = String(parentGroup);
-  }
-
-  return entry;
-}
-
 // ─── Component Parser ────────────────────────────────────────────────────────
-function parseComponent(component, association) {
-  if (!component) {
-    const assocGroup = association ? (association.toString().startsWith('Group') ? association : `Group ${association}`) : '';
-    return { type: 'lecture', group: association || '', label: assocGroup ? `Lecture ${assocGroup}` : 'Lecture', code: '' };
-  }
+function parseComponent(component) {
+  if (!component) return { type: 'lecture', group: '', label: 'Unknown', code: '' };
+  const str = component.trim().toUpperCase();
+  const match = str.match(/^([LB])(\d+)S$/);
+  if (!match) return { type: 'lecture', group: '', label: component, code: component };
 
-  const rawStr = component.trim();
-  const str = rawStr.toUpperCase();
+  const [, typeChar, numStr] = match;
+  const num = parseInt(numStr);
 
-  // 1. Standard L#S (Lecture) or B#S (Lab) codes
-  const matchCode = str.match(/^([LB])(\d+)S$/);
-  if (matchCode) {
-    const [, typeChar, numStr] = matchCode;
-    const num = parseInt(numStr);
-
-    if (typeChar === 'L') {
-      return { type: 'lecture', group: num, label: `Lecture Group ${num}`, code: str };
-    } else {
-      const groupNum = Math.ceil(num / 2);
-      const subGroup = num % 2 === 1 ? 'A' : 'B';
-      return { type: 'lab', group: `${groupNum}${subGroup}`, label: `Lab/Tutorial Group ${groupNum}${subGroup}`, code: str };
-    }
-  }
-
-  // 2. Generic pattern matching for Lecture / Lab / Tut / Tutorial
-  let entryType = 'lecture';
-  if (/Lab/i.test(rawStr)) entryType = 'lab';
-  else if (/Tut/i.test(rawStr)) entryType = 'tutorial';
-
-  const groupMatch = rawStr.match(/\(Group\s*([^)]+)\)|Group\s*([\w\d]+)/i) 
-    || rawStr.match(/(?:Lec|Lecture|Lab|Tut|Tutorial|L|B)\s*[-_:]?\s*([\w\d]+)/i)
-    || rawStr.match(/^(\d+[\w]*)$/);
-
-  let groupVal = groupMatch ? (groupMatch[1] || groupMatch[2]) : '';
-  if (!groupVal && association) {
-    groupVal = association.toString().replace(/^Group\s*/i, '');
-  }
-
-  if (entryType === 'lecture') {
-    const label = groupVal ? `Lecture (Group ${groupVal})` : 'Lecture';
-    return { type: 'lecture', group: groupVal, label, code: rawStr };
-  } else if (entryType === 'lab') {
-    const label = groupVal ? `Lab-${groupVal}` : 'Lab';
-    return { type: 'lab', group: groupVal, label, code: rawStr };
+  if (typeChar === 'L') {
+    return { type: 'lecture', group: num, label: `Lecture Group ${num}`, code: str };
   } else {
-    const label = groupVal ? `Tut-${groupVal}` : 'Tutorial';
-    return { type: 'tutorial', group: groupVal, label, code: rawStr };
+    const groupNum = Math.ceil(num / 2);
+    const subGroup = num % 2 === 1 ? 'A' : 'B';
+    return { type: 'lab', group: `${groupNum}${subGroup}`, label: `Lab/Tutorial Group ${groupNum}${subGroup}`, code: str };
   }
-}
-
-function getLectureGroupDisplay(entry) {
-  const parsed = parseComponent(entry.component, entry.association);
-  const groupMatch = parsed.label.match(/\(Group\s*[^)]+\)|Group\s*[\w\d]+/i)
-    || (entry.component ? entry.component.match(/\(Group\s*[^)]+\)|Group\s*[\w\d]+/i) : null)
-    || (entry.association ? `Group ${entry.association}` : null)
-    || (parsed.group ? `Group ${parsed.group}` : null);
-
-  const groupStr = groupMatch ? (typeof groupMatch === 'string' ? groupMatch : groupMatch[0]) : '';
-  const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
-  const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-  return `${formattedGroup}${classNoStr}`;
-}
-
-function getLabGroupDisplay(entry) {
-  const parsed = parseComponent(entry.component, entry.association);
-  let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Lab\s*/i, '');
-  if (!groupStr || groupStr.toLowerCase() === 'lab') {
-    groupStr = (entry.component || '').replace(/^Lab[-_\s]*/i, '') || (entry.association ? entry.association : '');
-  }
-  if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
-    groupStr = '-' + groupStr;
-  }
-  const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-  return `${groupStr}${classNoStr}`;
-}
-
-function getTutGroupDisplay(entry) {
-  const parsed = parseComponent(entry.component, entry.association);
-  let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Tut(orial)?\s*/i, '');
-  if (!groupStr || groupStr.toLowerCase() === 'tut' || groupStr.toLowerCase() === 'tutorial') {
-    groupStr = (entry.component || '').replace(/^Tut(orial)?[-_\s]*/i, '') || (entry.association ? entry.association : '');
-  }
-  if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
-    groupStr = '-' + groupStr;
-  }
-  const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-  return `${groupStr}${classNoStr}`;
 }
 
 function buildComponentCode(type, lectureGroup, parentGroup, subGroup) {
@@ -1346,11 +1200,25 @@ function renderGrid() {
 
               let typeLabelHtml = '';
               if (entryType === 'lecture') {
-                typeLabelHtml = `<span class="type-prefix">Lecture </span><span class="type-group">${getLectureGroupDisplay(entry)}</span>`;
+                const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
+                const groupStr = groupMatch ? groupMatch[0] : '';
+                const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
+                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+                typeLabelHtml = `<span class="type-prefix">Lecture </span><span class="type-group">${formattedGroup}${classNoStr}</span>`;
               } else if (entryType === 'lab') {
-                typeLabelHtml = `<span class="type-prefix">Lab</span><span class="type-group">${getLabGroupDisplay(entry)}</span>`;
+                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Lab\s*/i, '');
+                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
+                  groupStr = '-' + groupStr;
+                }
+                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+                typeLabelHtml = `<span class="type-prefix">Lab</span><span class="type-group">${groupStr}${classNoStr}</span>`;
               } else {
-                typeLabelHtml = `<span class="type-prefix">Tut</span><span class="type-group">${getTutGroupDisplay(entry)}</span>`;
+                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Tut(orial)?\s*/i, '');
+                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
+                  groupStr = '-' + groupStr;
+                }
+                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+                typeLabelHtml = `<span class="type-prefix">Tut</span><span class="type-group">${groupStr}${classNoStr}</span>`;
               }
 
               const widthPx = span * 52;
@@ -1771,12 +1639,12 @@ function parseCSV(text) {
       program = 'general';
     }
 
-    const rawEntry = {
+    entries.push({
       id: generateId(),
       level: getValue('level') || '1',
       courseCode: courseCode || 'COURSE',
       courseName: getValue('courseName'),
-      component: component || 'L1S',
+      component: component || 'Lec 1',
       entryType: parsed.type,
       association: getValue('association'),
       classNo: getValue('classNo'),
@@ -1787,9 +1655,7 @@ function parseCSV(text) {
       capacity: getValue('capacity'),
       instructor: getValue('instructor'),
       program
-    };
-
-    entries.push(normalizeComponentAndAssociation(rawEntry));
+    });
   }
   return entries;
 }
@@ -1986,16 +1852,18 @@ function exportVisualExcel() {
               const cellBorder = entry.customColor ? adjustColorBrightness(entry.customColor, -45) : defaultBorder;
 
               if (entryType === 'lecture') {
-                const groupDisplay = getLectureGroupDisplay(entry);
-                const dataAttrs = ` data-component="${entry.component || ''}" data-entry-type="${entryType}" data-class-no="${entry.classNo || ''}" data-instructor="${(entry.instructor || '').replace(/"/g, '&quot;')}" data-facility-id="${entry.facilityId || ''}" data-capacity="${entry.capacity || ''}" data-course-name="${(entry.courseName || '').replace(/"/g, '&quot;')}" data-course-code="${entry.courseCode || ''}" data-association="${entry.association || '1'}"`;
+                const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
+                const groupStr = groupMatch ? groupMatch[0] : '';
+                const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
+                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}"${dataAttrs} style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${groupDisplay}</span>
+                      <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${formattedGroup}${classNoStr}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
                     <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
@@ -2003,16 +1871,19 @@ function exportVisualExcel() {
                 `;
               } else {
                 let rawType = entryType === 'tutorial' ? 'Tut' : 'Lab';
-                const groupDisplay = entryType === 'tutorial' ? getTutGroupDisplay(entry) : getLabGroupDisplay(entry);
-                const dataAttrs = ` data-component="${entry.component || ''}" data-entry-type="${entryType}" data-class-no="${entry.classNo || ''}" data-instructor="${(entry.instructor || '').replace(/"/g, '&quot;')}" data-facility-id="${entry.facilityId || ''}" data-capacity="${entry.capacity || ''}" data-course-name="${(entry.courseName || '').replace(/"/g, '&quot;')}" data-course-code="${entry.courseCode || ''}" data-association="${entry.association || '1'}"`;
+                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^(Lab|Tut(orial)?)\s*/i, '');
+                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
+                  groupStr = '-' + groupStr;
+                }
+                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}"${dataAttrs} style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">${rawType}</span><span style="color:#ff0000;">${groupDisplay}</span>
+                      <span style="color:#0000ff;">${rawType}</span><span style="color:#ff0000;">${groupStr}${classNoStr}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
                     <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
@@ -2121,265 +1992,154 @@ function importVisualExcelFile(file) {
         return;
       }
 
-      // ─── Step 1: Build a 2D grid resolving ALL rowspan/colspan ───
-      // grid[r][c] = { td: <HTMLElement>, originRow: r, originCol: c }
-      // This ensures every logical cell position knows which <td> occupies it.
-      const numRows = rows.length;
-      const grid = [];
-      for (let r = 0; r < numRows; r++) grid[r] = [];
+      // Step 1: Find Header Row
+      let headerRow = rows.find(r => r.querySelector('th') || r.innerText.includes('DAY') || r.innerText.includes('9:00 AM'));
+      if (!headerRow) headerRow = rows[0];
 
-      for (let r = 0; r < numRows; r++) {
-        const cells = Array.from(rows[r].querySelectorAll('td, th'));
-        let cIdx = 0; // pointer into cells[]
-        let gCol = 0; // pointer into grid columns
+      const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
+      const headerTimes = [];
 
-        for (let ci = 0; ci < cells.length; ci++) {
-          // Skip columns already filled by a prior rowspan
-          while (grid[r][gCol]) gCol++;
+      headerCells.forEach((cell) => {
+        const txt = cell.textContent.trim();
+        const mins = parseSlotLabelToMinutes(txt);
+        headerTimes.push(mins);
+      });
 
-          const td = cells[ci];
-          const rs = parseInt(td.getAttribute('rowspan') || '1', 10);
-          const cs = parseInt(td.getAttribute('colspan') || '1', 10);
-
-          // Fill the grid block [r..r+rs-1][gCol..gCol+cs-1]
-          for (let dr = 0; dr < rs; dr++) {
-            for (let dc = 0; dc < cs; dc++) {
-              if (r + dr < numRows) {
-                if (!grid[r + dr]) grid[r + dr] = [];
-                grid[r + dr][gCol + dc] = { td, originRow: r, originCol: gCol };
-              }
-            }
-          }
-          gCol += cs;
-        }
-      }
-
-      // ─── Step 2: Find header row and extract time slot map ───
-      let headerRowIdx = 0;
-      for (let r = 0; r < numRows; r++) {
-        const rowText = rows[r].textContent || '';
-        if (rowText.includes('DAY') || rowText.includes('LEVEL') || rowText.includes('9:00 AM') || rows[r].querySelector('th')) {
-          headerRowIdx = r;
-          break;
-        }
-      }
-
-      // Build column → minutes map from the header row
-      const numCols = grid[headerRowIdx] ? grid[headerRowIdx].length : 0;
-      const colToMinutes = [];
-      for (let c = 0; c < numCols; c++) {
-        const cell = grid[headerRowIdx][c];
-        if (cell && cell.originRow === headerRowIdx && cell.originCol === c) {
-          const txt = cell.td.textContent.trim();
-          colToMinutes[c] = parseSlotLabelToMinutes(txt);
-        } else {
-          colToMinutes[c] = null;
-        }
-      }
-
-      // Identify which columns are DAY (col 0) and LEVEL (col 1) vs time data (col >= 2)
-      // The header has "DAY" at col 0, "LEVEL" at col 1, then time slots from col 2 onward.
-
-      // ─── Step 3: Parse body rows using resolved grid ───
+      // Step 2: Parse Body Rows
       const importedEntries = [];
-      let currentDay = 'Saturday';
+      let currentDay = 'Sunday';
       let currentLevel = '1';
       let currentProgram = 'general';
 
-      for (let r = headerRowIdx + 1; r < numRows; r++) {
-        if (!grid[r]) continue;
-        const rowCols = grid[r].length;
+      const bodyRows = rows.filter(r => r !== headerRow);
 
-        // Read DAY from column 0 (only when this row is the origin of that cell)
-        if (grid[r][0]) {
-          const dayCell = grid[r][0];
-          if (dayCell.originRow === r && dayCell.originCol === 0) {
-            const dayTxt = dayCell.td.textContent.replace(/\s+/g, ' ').trim();
-            const dm = DAYS.find(d => dayTxt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
-            if (dm) currentDay = dm;
-          }
-        }
+      bodyRows.forEach(tr => {
+        const cells = Array.from(tr.querySelectorAll('td, th'));
+        let colTracker = 0;
 
-        // Read LEVEL from column 1 (only when this row is the origin of that cell)
-        if (grid[r][1]) {
-          const lvlCell = grid[r][1];
-          if (lvlCell.originRow === r && lvlCell.originCol === 1) {
-            const lvlTxt = lvlCell.td.textContent.replace(/\s+/g, ' ').trim();
-            const lm = lvlTxt.match(/Level\s*(\d+)/i);
-            if (lm) {
-              currentLevel = lm[1];
-              if (/Biotech/i.test(lvlTxt)) currentProgram = 'biotech';
-              else if (/Chemistry/i.test(lvlTxt)) currentProgram = 'chemistry';
-              else if (/Renewable/i.test(lvlTxt)) currentProgram = 'renewable';
-              else if (/Engineering/i.test(lvlTxt)) currentProgram = 'engineering';
-              else currentProgram = 'general';
-            }
-          }
-        }
-
-        // Scan time-slot columns (col >= 2) for course entries
-        let c = 2;
-        while (c < rowCols) {
-          const cellInfo = grid[r][c];
-          if (!cellInfo) { c++; continue; }
-
-          // Only process if this row is the origin row of the cell (avoid double-counting rowspanned cells)
-          if (cellInfo.originRow !== r || cellInfo.originCol !== c) { c++; continue; }
-
-          const td = cellInfo.td;
-          const cs = parseInt(td.getAttribute('colspan') || '1', 10);
+        cells.forEach(td => {
+          const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
           const txt = td.textContent.replace(/\s+/g, ' ').trim();
 
-          // Skip empty cells
-          if (!txt || txt === '—' || txt === '-') { c += cs; continue; }
+          // Check Day cell
+          const dayMatch = DAYS.find(d => txt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
+          if (dayMatch && colTracker === 0) {
+            currentDay = dayMatch;
+          }
 
-          // Check if this cell contains a course code (either from data attr or text)
-          const hasDataAttrs = td.hasAttribute('data-component');
-          const courseCodeMatch = td.innerHTML.match(/([A-Z]{2,4}\s*\d{3})/i) || txt.match(/([A-Z]{2,4}\s*\d{3})/i);
-          if (!courseCodeMatch && !hasDataAttrs) { c += cs; continue; }
+          // Check Level cell
+          const levelMatch = txt.match(/Level\s*(\d+)/i);
+          if (levelMatch && (colTracker === 0 || colTracker === 1)) {
+            currentLevel = levelMatch[1];
+            if (/Biotech/i.test(txt)) currentProgram = 'biotech';
+            else if (/Chemistry/i.test(txt)) currentProgram = 'chemistry';
+            else if (/Renewable/i.test(txt)) currentProgram = 'renewable';
+            else if (/Engineering/i.test(txt)) currentProgram = 'engineering';
+            else currentProgram = 'general';
+          }
 
-          // ─── Data-attribute path (exact round-trip from our own export) ───
-          if (hasDataAttrs) {
-            const courseCode = (td.getAttribute('data-course-code') || courseCodeMatch?.[1] || '').replace(/\s+/g, '').toUpperCase();
-            if (!courseCode) { c += cs; continue; }
+          // Check Course Entry cell
+          const courseCodeMatch = td.innerHTML.match(/([A-Z]{2,4}\s*\d{3})/i) || td.textContent.match(/([A-Z]{2,4}\s*\d{3})/i);
+          if (courseCodeMatch && !td.textContent.includes('DAY') && !td.textContent.includes('LEVEL') && colTracker >= 2) {
+            const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
 
-            // Calculate start & end minutes from true grid column position
-            let startMin = colToMinutes[c];
-            let endMin = colToMinutes[c + cs - 1];
-            if (startMin === null || startMin === undefined) startMin = 540 + Math.max(0, c - 2) * 15;
-            if (endMin === null || endMin === undefined) endMin = startMin + cs * 15;
+            // Split cell content into distinct lines to parse line-by-line
+            const rawHtml = td.innerHTML || '';
+            const cellLines = rawHtml
+              .split(/<br\s*\/?>|\r?\n/)
+              .map(l => l.replace(/<[^>]+>/g, '').trim())
+              .filter(Boolean);
 
-            const rawEntry = {
+            let courseName = '';
+            let line0 = cellLines[0] || td.textContent;
+
+            // Line 0: Course Code - Course Name
+            const nameMatch = line0.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍(]+)/i);
+            if (nameMatch) {
+              courseName = nameMatch[2]
+                .replace(/\b(Lecture|Lab|Tut|Tutorial)\b/gi, '')
+                .replace(/Class\s*No:.*/gi, '')
+                .trim();
+            }
+
+            // Calculate start & end minutes from column position
+            let startMin = headerTimes[colTracker];
+            let endMin = headerTimes[colTracker + colSpan - 1];
+
+            if (startMin === null || startMin === undefined) {
+              startMin = 540 + Math.max(0, colTracker - 2) * 15;
+            }
+            if (endMin === null || endMin === undefined) {
+              endMin = startMin + colSpan * 15;
+            }
+
+            const fullCellTxt = td.textContent.replace(/\s+/g, ' ').trim();
+
+            let entryType = 'lecture';
+            let component = 'L1S';
+
+            if (/Lecture/i.test(fullCellTxt) || /Lec\b/i.test(fullCellTxt)) {
+              entryType = 'lecture';
+              const grp = fullCellTxt.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i);
+              const gNum = grp ? (grp[1] || grp[2]) : '1';
+              component = `L${gNum}S`;
+            } else if (/Lab\b/i.test(fullCellTxt)) {
+              entryType = 'lab';
+              const grp = fullCellTxt.match(/Lab-?\s*([A-Za-z0-9()]+)/i);
+              const gStr = grp ? grp[1] : '1A';
+              component = `Lab-${gStr}`;
+            } else if (/Tut(?:orial)?\b/i.test(fullCellTxt)) {
+              entryType = 'tutorial';
+              const grp = fullCellTxt.match(/Tut-?\s*([A-Za-z0-9()]+)/i);
+              const gStr = grp ? grp[1] : '1A';
+              component = `Tut-${gStr}`;
+            }
+
+            let classNo = '';
+            const classMatch = fullCellTxt.match(/Class No:\s*(\d+)/i);
+            if (classMatch) classNo = classMatch[1];
+
+            let instructor = '';
+            const instLine = cellLines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د.') || l.startsWith('م.')) || '';
+            if (instLine) {
+              instructor = instLine.replace('👤', '').trim();
+            }
+
+            let facilityId = '';
+            let capacity = '';
+            const facLine = cellLines.find(l => l.includes('📍') || l.startsWith('B') || l.includes('-')) || '';
+            const facMatch = (facLine || fullCellTxt).match(/📍?\s*([A-Z0-9/-]+)\s*(?:\((\d+)\))?/i);
+            if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
+              facilityId = facMatch[1].trim();
+              if (facMatch[2]) capacity = facMatch[2].trim();
+            }
+
+            let association = '1';
+            const assocMatch = component.match(/\d+/);
+            if (assocMatch) association = assocMatch[0];
+
+            importedEntries.push({
               id: generateId(),
               day: currentDay,
               level: currentLevel,
               program: currentProgram,
               courseCode: courseCode,
-              courseName: td.getAttribute('data-course-name') || '',
-              component: td.getAttribute('data-component') || 'L1S',
-              entryType: td.getAttribute('data-entry-type') || 'lecture',
-              classNo: td.getAttribute('data-class-no') || '',
-              facilityId: td.getAttribute('data-facility-id') || '',
-              capacity: td.getAttribute('data-capacity') || '',
-              instructor: td.getAttribute('data-instructor') || '',
+              courseName: courseName,
+              component: component,
+              entryType: entryType,
+              classNo: classNo,
+              facilityId: facilityId,
+              capacity: capacity,
+              instructor: instructor,
               startMinutes: startMin,
               endMinutes: endMin,
-              association: td.getAttribute('data-association') || '1'
-            };
-            importedEntries.push(normalizeComponentAndAssociation(rawEntry));
-
-            c += cs;
-            continue;
+              association: association
+            });
           }
 
-          // ─── Regex fallback path (for files not exported by our tool) ───
-          const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
-
-          // Split cell content into distinct lines to parse line-by-line
-          const rawHtml = td.innerHTML || '';
-          const cellLines = rawHtml
-            .split(/<br\s*\/?>|\r?\n/)
-            .map(l => l.replace(/<[^>]+>/g, '').trim())
-            .filter(Boolean);
-
-          let courseName = '';
-          const line0 = cellLines[0] || txt;
-
-          // Line 0: Course Code - Course Name
-          const nameMatch = line0.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍(]+)/i);
-          if (nameMatch) {
-            courseName = nameMatch[2]
-              .replace(/\b(Lecture|Lab|Tut|Tutorial)\b/gi, '')
-              .replace(/Class\s*No:.*/gi, '')
-              .trim();
-          }
-
-          // Calculate start & end minutes from true grid column position
-          let startMin = colToMinutes[c];
-          let endColIdx = c + cs - 1;
-          let endMin = colToMinutes[endColIdx];
-
-          if (startMin === null || startMin === undefined) {
-            startMin = 540 + Math.max(0, c - 2) * 15;
-          }
-          if (endMin === null || endMin === undefined) {
-            endMin = startMin + cs * 15;
-          }
-
-          const fullCellTxt = txt;
-
-          let entryType = 'lecture';
-          let component = 'L1S';
-
-          if (/Lecture/i.test(fullCellTxt) || /Lec\b/i.test(fullCellTxt)) {
-            entryType = 'lecture';
-            const grp = fullCellTxt.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i);
-            const gNum = grp ? (grp[1] || grp[2]) : '1';
-            component = `L${gNum}S`;
-          } else if (/Lab\b/i.test(fullCellTxt)) {
-            entryType = 'lab';
-            const grp = fullCellTxt.match(/Lab-?\s*([A-Za-z0-9()]+)/i);
-            const gStr = grp ? grp[1] : '1A';
-            component = `Lab-${gStr}`;
-          } else if (/Tut(?:orial)?\b/i.test(fullCellTxt)) {
-            entryType = 'tutorial';
-            const grp = fullCellTxt.match(/Tut-?\s*([A-Za-z0-9()]+)/i);
-            const gStr = grp ? grp[1] : '1A';
-            component = `Tut-${gStr}`;
-          }
-
-          let classNo = '';
-          const classMatch = fullCellTxt.match(/Class No:\s*(\d+)/i);
-          if (classMatch) classNo = classMatch[1];
-
-          let instructor = '';
-          const instLine = cellLines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د.') || l.startsWith('م.')) || '';
-          if (instLine) {
-            instructor = instLine.replace('👤', '').trim();
-          }
-
-          let facilityId = '';
-          let capacity = '';
-
-          const pinMatch = fullCellTxt.match(/📍\s*([A-Z0-9/._-]+)\s*(?:\((\d+)\))?/i);
-          if (pinMatch) {
-            facilityId = pinMatch[1].trim();
-            if (pinMatch[2]) capacity = pinMatch[2].trim();
-          } else {
-            const facLine = cellLines.find(l => l.includes('📍') || l.startsWith('B') || l.includes('-')) || '';
-            const facMatch = (facLine || fullCellTxt).match(/(?:📍|Room|Building)?\s*([A-Z0-9]{1,4}[-/A-Z0-9._]+)\s*(?:\((\d+)\))?/i);
-            if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
-              facilityId = facMatch[1].trim();
-              if (facMatch[2]) capacity = facMatch[2].trim();
-            }
-          }
-
-          let association = '1';
-          const assocMatch = component.match(/\d+/);
-          if (assocMatch) association = assocMatch[0];
-
-          const rawEntry = {
-            id: generateId(),
-            day: currentDay,
-            level: currentLevel,
-            program: currentProgram,
-            courseCode: courseCode,
-            courseName: courseName,
-            component: component,
-            entryType: entryType,
-            classNo: classNo,
-            facilityId: facilityId,
-            capacity: capacity,
-            instructor: instructor,
-            startMinutes: startMin,
-            endMinutes: endMin,
-            association: association
-          };
-          importedEntries.push(normalizeComponentAndAssociation(rawEntry));
-
-          c += cs;
-        }
-      }
+          colTracker += colSpan;
+        });
+      });
 
       if (importedEntries.length === 0) {
         showToast('No valid schedule entries detected in the uploaded file.', 'warning');
@@ -2661,7 +2421,7 @@ function saveEntry() {
   const useCustomColor = document.getElementById('field-use-custom-color') ? document.getElementById('field-use-custom-color').checked : false;
   const customColorVal = document.getElementById('field-custom-color') ? document.getElementById('field-custom-color').value : null;
 
-  let entry = {
+  const entry = {
     id: currentEditId || generateId(),
     level, courseCode, courseName, component,
     entryType: selectedType,
@@ -2670,7 +2430,6 @@ function saveEntry() {
     day, capacity, instructor, program,
     customColor: useCustomColor ? customColorVal : undefined
   };
-  entry = normalizeComponentAndAssociation(entry);
 
   const isEdit = !!currentEditId;
   if (currentEditId) {
