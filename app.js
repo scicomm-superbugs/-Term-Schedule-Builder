@@ -2015,7 +2015,21 @@ function importVisualExcelFile(file) {
 
       bodyRows.forEach(tr => {
         const cells = Array.from(tr.querySelectorAll('td, th'));
+        if (cells.length === 0) return;
+
+        // Determine starting colTracker for this row based on presence of Day / Level cells
         let colTracker = 0;
+        const firstCellTxt = cells[0] ? cells[0].textContent.replace(/\s+/g, ' ').trim() : '';
+        const isFirstDay = DAYS.some(d => firstCellTxt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
+        const isFirstLevel = /Level\s*\d+/i.test(firstCellTxt);
+
+        if (!isFirstDay && !isFirstLevel) {
+          colTracker = 2; // Row starts directly at time column 9:00 AM (index 2)
+        } else if (!isFirstDay && isFirstLevel) {
+          colTracker = 1; // Row starts at Level column (index 1)
+        } else {
+          colTracker = 0; // Row starts at Day column (index 0)
+        }
 
         cells.forEach(td => {
           const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
@@ -2023,13 +2037,13 @@ function importVisualExcelFile(file) {
 
           // Check Day cell
           const dayMatch = DAYS.find(d => txt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
-          if (dayMatch && colTracker === 0) {
+          if (dayMatch && (colTracker === 0 || isFirstDay)) {
             currentDay = dayMatch;
           }
 
           // Check Level cell
           const levelMatch = txt.match(/Level\s*(\d+)/i);
-          if (levelMatch && (colTracker === 0 || colTracker === 1)) {
+          if (levelMatch && (colTracker <= 1 || isFirstLevel)) {
             currentLevel = levelMatch[1];
             if (/Biotech/i.test(txt)) currentProgram = 'biotech';
             else if (/Chemistry/i.test(txt)) currentProgram = 'chemistry';
@@ -2064,14 +2078,14 @@ function importVisualExcelFile(file) {
 
             // Calculate start & end minutes from column position
             let startMin = headerTimes[colTracker];
-            let endMin = headerTimes[colTracker + colSpan - 1];
-
             if (startMin === null || startMin === undefined) {
               startMin = 540 + Math.max(0, colTracker - 2) * 15;
             }
-            if (endMin === null || endMin === undefined) {
-              endMin = startMin + colSpan * 15;
-            }
+
+            let lastSlotMin = headerTimes[colTracker + colSpan - 1];
+            let endMin = (lastSlotMin !== null && lastSlotMin !== undefined)
+              ? lastSlotMin + 15
+              : startMin + colSpan * 15;
 
             const fullCellTxt = td.textContent.replace(/\s+/g, ' ').trim();
 
