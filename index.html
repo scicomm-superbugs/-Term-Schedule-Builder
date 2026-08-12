@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="style.css?v=19.0" />
+  <link rel="stylesheet" href="style.css?v=20.0" />
 </head>
 <body>
   <div class="app">
@@ -37,6 +37,10 @@
         <button class="btn" id="btn-export" title="Export SIS Excel Sheet">
           <span>📥</span> Export SIS Excel
         </button>
+        <button class="btn btn-emerald" id="btn-import-visual" title="Import Visual Schedule Grid from exported Excel Sheet">
+          <span>📥</span> Import Visual Excel
+        </button>
+        <input type="file" id="file-input-visual" accept=".xls,.xlsx,.html,.htm" style="display:none;" />
         <button class="btn btn-success" id="btn-export-visual" title="Export Visual Schedule Grid as Excel Sheet with colors & formatting">
           <span>📊</span> Export Visual Excel
         </button>
@@ -513,6 +517,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-  <script src="app.js?v=19.0"></script>
+  <script src="app.js?v=20.0"></script>
 </body>
 </html>

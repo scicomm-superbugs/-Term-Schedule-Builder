@@ -1849,6 +1849,201 @@ function exportVisualExcel() {
   showToast('Visual Schedule exported to Excel (.xls)', 'success');
 }
 
+// ─── Visual Schedule Excel Importer ──────────────────────────────────────────
+function parseSlotLabelToMinutes(str) {
+  if (!str) return null;
+  const cleaned = str.replace(/\s+/g, ' ').trim();
+  const match = cleaned.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!match) return null;
+  let h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const period = match[3] ? match[3].toUpperCase() : null;
+
+  if (period === 'PM' && h < 12) h += 12;
+  if (period === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+function importVisualExcelFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = function(e) {
+    try {
+      const content = e.target.result;
+      let htmlDoc = null;
+
+      if (typeof content === 'string' && (content.includes('<table') || content.includes('<html'))) {
+        const parser = new DOMParser();
+        htmlDoc = parser.parseFromString(content, 'text/html');
+      } else if (window.XLSX) {
+        const data = new Uint8Array(content);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const htmlStr = XLSX.utils.sheet_to_html(workbook.Sheets[firstSheetName]);
+        const parser = new DOMParser();
+        htmlDoc = parser.parseFromString(htmlStr, 'text/html');
+      }
+
+      if (!htmlDoc) {
+        showToast('Unsupported file format. Please upload a Visual Excel (.xls/.xlsx/.html) file.', 'error');
+        return;
+      }
+
+      const table = htmlDoc.querySelector('table');
+      if (!table) {
+        showToast('No table grid found in the uploaded file.', 'error');
+        return;
+      }
+
+      const rows = Array.from(table.querySelectorAll('tr'));
+      if (rows.length < 2) {
+        showToast('Table structure invalid or empty.', 'error');
+        return;
+      }
+
+      let headerRow = rows.find(r => r.querySelector('th') || r.innerText.includes('DAY'));
+      if (!headerRow) headerRow = rows[0];
+
+      const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
+      const headerTimes = [];
+
+      headerCells.forEach((cell) => {
+        const txt = cell.textContent.trim();
+        const mins = parseSlotLabelToMinutes(txt);
+        headerTimes.push(mins);
+      });
+
+      const newEntries = [];
+      let currentDay = 'Sunday';
+      let currentLevel = '1';
+      let currentProgram = 'general';
+
+      const bodyRows = rows.filter(r => r !== headerRow);
+
+      bodyRows.forEach(tr => {
+        const cells = Array.from(tr.querySelectorAll('td, th'));
+        let colTracker = 0;
+
+        cells.forEach(td => {
+          const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
+          const txt = td.textContent.trim();
+
+          const dayMatch = DAYS.find(d => txt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
+          if (dayMatch) {
+            currentDay = dayMatch;
+          }
+
+          const levelMatch = txt.match(/Level\s*(\d+)/i);
+          if (levelMatch) {
+            currentLevel = levelMatch[1];
+            if (/Biotech/i.test(txt)) currentProgram = 'biotech';
+            else if (/Chemistry/i.test(txt)) currentProgram = 'chemistry';
+            else if (/Renewable/i.test(txt)) currentProgram = 'renewable';
+            else if (/Engineering/i.test(txt)) currentProgram = 'engineering';
+            else currentProgram = 'general';
+          }
+
+          const courseMatch = txt.match(/([A-Z]{2,4}\d{3})\s*(?:-\s*([^👤📍\n]+))?/);
+          if (courseMatch && !txt.includes('DAY') && !txt.includes('LEVEL')) {
+            const courseCode = courseMatch[1];
+            let courseName = courseMatch[2] ? courseMatch[2].trim() : '';
+
+            let startMin = headerTimes[colTracker];
+            let endMin = headerTimes[colTracker + colSpan];
+
+            if (startMin === null || startMin === undefined) {
+              startMin = 540 + Math.max(0, colTracker - 2) * 15;
+            }
+            if (endMin === null || endMin === undefined) {
+              endMin = startMin + colSpan * 15;
+            }
+
+            let entryType = 'lecture';
+            let component = 'L1S';
+
+            if (/Lecture/i.test(txt) || /Lec\b/i.test(txt)) {
+              entryType = 'lecture';
+              const grp = txt.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i);
+              const gNum = grp ? (grp[1] || grp[2]) : '1';
+              component = `L${gNum}S`;
+            } else if (/Lab\b/i.test(txt)) {
+              entryType = 'lab';
+              const grp = txt.match(/Lab-?\s*([A-Za-z0-9()]+)/i);
+              const gStr = grp ? grp[1] : '1A';
+              component = `Lab-${gStr}`;
+            } else if (/Tut(?:orial)?\b/i.test(txt)) {
+              entryType = 'tutorial';
+              const grp = txt.match(/Tut-?\s*([A-Za-z0-9()]+)/i);
+              const gStr = grp ? grp[1] : '1A';
+              component = `Tut-${gStr}`;
+            }
+
+            let classNo = '';
+            const classMatch = txt.match(/Class No:\s*(\d+)/i);
+            if (classMatch) classNo = classMatch[1];
+
+            let instructor = '';
+            const instMatch = txt.match(/👤\s*([^📍\n]+)/);
+            if (instMatch) instructor = instMatch[1].trim();
+
+            let facilityId = '';
+            let capacity = '';
+            const facMatch = txt.match(/📍\s*([A-Za-z0-9-]+)(?:\s*\((\d+)\))?/);
+            if (facMatch) {
+              facilityId = facMatch[1].trim();
+              if (facMatch[2]) capacity = facMatch[2].trim();
+            }
+
+            let association = '1';
+            const assocMatch = component.match(/\d+/);
+            if (assocMatch) association = assocMatch[0];
+
+            newEntries.push({
+              id: generateId(),
+              day: currentDay,
+              level: currentLevel,
+              program: currentProgram,
+              courseCode: courseCode,
+              courseName: courseName,
+              component: component,
+              entryType: entryType,
+              classNo: classNo,
+              facilityId: facilityId,
+              capacity: capacity,
+              instructor: instructor,
+              startMinutes: startMin,
+              endMinutes: endMin,
+              association: association
+            });
+          }
+
+          colTracker += colSpan;
+        });
+      });
+
+      if (newEntries.length === 0) {
+        showToast('No valid schedule entries found in the file.', 'warning');
+        return;
+      }
+
+      scheduleData = [...scheduleData, ...newEntries];
+      saveData();
+      renderGrid();
+      logActivity('📥 Imported Visual Excel', `Imported ${newEntries.length} entries from Visual Excel Sheet`, '📥');
+      showToast(`Successfully imported ${newEntries.length} schedule entries!`, 'success');
+    } catch (err) {
+      console.error('Failed to parse Visual Excel file:', err);
+      showToast('Failed to parse Visual Excel file: ' + err.message, 'error');
+    }
+  };
+
+  if (file.name.endsWith('.html') || file.name.endsWith('.htm') || file.type.includes('text/html')) {
+    reader.readAsText(file);
+  } else {
+    reader.readAsArrayBuffer(file);
+  }
+}
+
 // ─── Import Schedule State ───────────────────────────────────────────────────
 function importScheduleState() {
   const input = document.createElement('input');
@@ -2241,6 +2436,24 @@ function initEventListeners() {
     exportCSV();
   });
   
+  const btnImportVisual = document.getElementById('btn-import-visual');
+  const fileInputVisual = document.getElementById('file-input-visual');
+
+  if (btnImportVisual && fileInputVisual) {
+    btnImportVisual.addEventListener('click', () => {
+      if (!requireAuth('import visual excel files')) return;
+      fileInputVisual.click();
+    });
+
+    fileInputVisual.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        importVisualExcelFile(file);
+        fileInputVisual.value = '';
+      }
+    });
+  }
+
   const btnExportVisual = document.getElementById('btn-export-visual');
   if (btnExportVisual) btnExportVisual.addEventListener('click', () => {
     if (!requireAuth('export visual schedule')) return;
