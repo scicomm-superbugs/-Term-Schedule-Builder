@@ -1152,7 +1152,7 @@ function renderGrid() {
             const tdLevel = document.createElement('td');
             tdLevel.className = 'sched-level';
             tdLevel.rowSpan = subRows.length;
-            const levelBottomBorder = isLastGroupInDay ? 'border-bottom: 3.5px solid #dc2626 !important;' : 'border-bottom: 3.5px solid #000000 !important;';
+            const levelBottomBorder = isLastGroupInDay ? 'border-bottom: 3.5px solid #dc2626 !important;' : 'border-bottom: 5.5px solid #000000 !important;';
             tdLevel.style.cssText = `background-color: ${prog.bg} !important; border-left: 3px solid ${prog.color}; border-right: 2px solid #cbd5e1; ${levelBottomBorder} vertical-align: middle; text-align: center; padding: 4px 6px;`;
 
             let levelInner = `<div style="font-weight:800; font-size:0.75rem; color:${prog.textColor};">Level ${group.level}</div>`;

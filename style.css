@@ -767,7 +767,7 @@ body {
 }
 
 .sched-row.level-last td {
-  border-bottom: 3.5px solid #000000 !important;
+  border-bottom: 5.5px solid #000000 !important;
 }
 
 .sched-row.day-last td,
