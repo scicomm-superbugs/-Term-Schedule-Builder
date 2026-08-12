@@ -2038,6 +2038,21 @@ function importVisualExcelFile(file) {
             else currentProgram = 'general';
           }
 
+          // Check Course Entry cell
+          const courseCodeMatch = td.innerHTML.match(/([A-Z]{2,4}\s*\d{3})/i) || td.textContent.match(/([A-Z]{2,4}\s*\d{3})/i);
+          if (courseCodeMatch && !td.textContent.includes('DAY') && !td.textContent.includes('LEVEL') && colTracker >= 2) {
+            const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
+
+            // Split cell content into distinct lines to parse line-by-line
+            const rawHtml = td.innerHTML || '';
+            const cellLines = rawHtml
+              .split(/<br\s*\/?>|\r?\n/)
+              .map(l => l.replace(/<[^>]+>/g, '').trim())
+              .filter(Boolean);
+
+            let courseName = '';
+            let line0 = cellLines[0] || td.textContent;
+
             // Line 0: Course Code - Course Name
             const nameMatch = line0.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍(]+)/i);
             if (nameMatch) {
@@ -2145,97 +2160,7 @@ function importVisualExcelFile(file) {
       saveData();
       renderGrid();
       logActivity('📥 Imported Visual Excel', `Imported ${cleanEntries.length} schedule entries from Visual Excel Sheet`, '📥');
-      showToast(`Successfully imported ${cleanEntries.length} schedule entries!`, 'success');]+)/i);
-            if (nameMatch) {
-              courseName = nameMatch[2].trim();
-            }
-
-            // Calculate start & end minutes from column position
-            let startMin = headerTimes[colTracker];
-            let endMin = headerTimes[colTracker + colSpan - 1];
-
-            if (startMin === null || startMin === undefined) {
-              startMin = 540 + Math.max(0, colTracker - 2) * 15;
-            }
-            if (endMin === null || endMin === undefined) {
-              endMin = startMin + colSpan * 15;
-            }
-
-            let entryType = 'lecture';
-            let component = 'L1S';
-
-            if (/Lecture/i.test(txt) || /Lec\b/i.test(txt)) {
-              entryType = 'lecture';
-              const grp = txt.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i);
-              const gNum = grp ? (grp[1] || grp[2]) : '1';
-              component = `L${gNum}S`;
-            } else if (/Lab\b/i.test(txt)) {
-              entryType = 'lab';
-              const grp = txt.match(/Lab-?\s*([A-Za-z0-9()]+)/i);
-              const gStr = grp ? grp[1] : '1A';
-              component = `Lab-${gStr}`;
-            } else if (/Tut(?:orial)?\b/i.test(txt)) {
-              entryType = 'tutorial';
-              const grp = txt.match(/Tut-?\s*([A-Za-z0-9()]+)/i);
-              const gStr = grp ? grp[1] : '1A';
-              component = `Tut-${gStr}`;
-            }
-
-            let classNo = '';
-            const classMatch = txt.match(/Class No:\s*(\d+)/i);
-            if (classMatch) classNo = classMatch[1];
-
-            let instructor = '';
-            const instMatch = txt.match(/(?:👤|د\.|أ\.د\.|م\.)\s*([^\n\r📍]+)/);
-            if (instMatch) {
-              instructor = instMatch[0].replace('👤', '').trim();
-            }
-
-            let facilityId = '';
-            let capacity = '';
-            const facMatch = txt.match(/📍?\s*([A-Z0-9/-]+)\s*(?:\((\d+)\))?/i);
-            if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
-              facilityId = facMatch[1].trim();
-              if (facMatch[2]) capacity = facMatch[2].trim();
-            }
-
-            let association = '1';
-            const assocMatch = component.match(/\d+/);
-            if (assocMatch) association = assocMatch[0];
-
-            importedEntries.push({
-              id: generateId(),
-              day: currentDay,
-              level: currentLevel,
-              program: currentProgram,
-              courseCode: courseCode,
-              courseName: courseName,
-              component: component,
-              entryType: entryType,
-              classNo: classNo,
-              facilityId: facilityId,
-              capacity: capacity,
-              instructor: instructor,
-              startMinutes: startMin,
-              endMinutes: endMin,
-              association: association
-            });
-          }
-
-          colTracker += colSpan;
-        });
-      });
-
-      if (importedEntries.length === 0) {
-        showToast('No valid schedule entries detected in the uploaded file.', 'warning');
-        return;
-      }
-
-      scheduleData = importedEntries;
-      saveData();
-      renderGrid();
-      logActivity('📥 Imported Visual Excel', `Imported ${importedEntries.length} schedule entries from Visual Excel Sheet`, '📥');
-      showToast(`Successfully imported ${importedEntries.length} schedule entries!`, 'success');
+      showToast(`Successfully imported ${cleanEntries.length} schedule entries!`, 'success');
     } catch (err) {
       console.error('Failed to parse Visual Excel file:', err);
       showToast('Failed to parse Visual Excel file: ' + err.message, 'error');
