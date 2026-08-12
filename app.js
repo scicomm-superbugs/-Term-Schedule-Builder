@@ -1746,132 +1746,97 @@ function csvEscape(str) {
   return str;
 }
 
-// ─── Visual Schedule Excel Exporter ──────────────────────────────────────────
+// ─── Dual-Sheet Master Excel Exporter & Visual Grid Exporter ────────────────
 function exportVisualExcel() {
   if (scheduleData.length === 0) {
     showToast('No entries in schedule to export', 'error');
     return;
   }
 
+  if (typeof XLSX !== 'undefined') {
+    try {
+      const wb = XLSX.utils.book_new();
+
+      // ── Sheet 1: Visual Schedule ──────────────────────────────────────────
+      const tableEl = document.querySelector('#grid-container table');
+      let wsVisual;
+      if (tableEl) {
+        wsVisual = XLSX.utils.table_to_sheet(tableEl);
+      } else {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = generateVisualTableHtml();
+        wsVisual = XLSX.utils.table_to_sheet(tempDiv.querySelector('table'));
+      }
+
+      // ── Sheet 2: SIS Data ────────────────────────────────────────────────
+      const sisRows = scheduleData.map(entry => {
+        const parsed = parseComponent(entry.component);
+        const typeLabel = entry.entryType || parsed.type;
+
+        let componentFormatted = entry.component;
+        if (typeLabel === 'lecture') {
+          const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
+          const groupStr = groupMatch ? groupMatch[0] : '';
+          componentFormatted = `Lecture ${groupStr}`.trim();
+        } else if (typeLabel === 'lab') {
+          componentFormatted = `Lab ${entry.component.replace(/^Lab-?/i, '')}`.trim();
+        } else if (typeLabel === 'tutorial') {
+          componentFormatted = `Tutorial ${entry.component.replace(/^Tut(orial)?-?/i, '')}`.trim();
+        }
+
+        return {
+          'Level': entry.level || '1',
+          'Course Code': entry.courseCode || '',
+          'Course Name': entry.courseName || '',
+          'Component': componentFormatted,
+          'Class No': entry.classNo || '',
+          'Facility ID': entry.facilityId || '',
+          'Mtg Start': (entry.startMinutes !== null && entry.startMinutes !== undefined) ? minutesToTimeString(entry.startMinutes) : 'TBA',
+          'Mtg End': (entry.endMinutes !== null && entry.endMinutes !== undefined) ? minutesToTimeString(entry.endMinutes) : 'TBA',
+          'Day': entry.day || 'TBA',
+          'Capacity': entry.capacity || '',
+          'Instructor 1': entry.instructor || '',
+          'Program': entry.program || 'general'
+        };
+      });
+
+      const wsSIS = XLSX.utils.json_to_sheet(sisRows);
+
+      // Set column widths for SIS Data sheet
+      wsSIS['!cols'] = [
+        { wch: 8 },  // Level
+        { wch: 14 }, // Course Code
+        { wch: 32 }, // Course Name
+        { wch: 22 }, // Component
+        { wch: 12 }, // Class No
+        { wch: 22 }, // Facility ID
+        { wch: 12 }, // Mtg Start
+        { wch: 12 }, // Mtg End
+        { wch: 12 }, // Day
+        { wch: 10 }, // Capacity
+        { wch: 30 }, // Instructor 1
+        { wch: 18 }  // Program
+      ];
+
+      XLSX.utils.book_append_sheet(wb, wsVisual, "Visual Schedule");
+      XLSX.utils.book_append_sheet(wb, wsSIS, "SIS Data");
+
+      const fileName = `Term_Schedule_Master_Workbook_${getDateStamp()}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      logActivity('📊 Exported Master Excel', `Exported dual-sheet workbook with Visual & SIS sheets (${scheduleData.length} entries)`, '📊');
+      showToast(`Master Excel Workbook exported with Visual & SIS sheets!`, 'success');
+      return;
+    } catch (err) {
+      console.warn("SheetJS export notice, falling back to HTML export:", err);
+    }
+  }
+
+  exportVisualExcelHTML();
+}
+
+function exportVisualExcelHTML() {
   const { start: timeStart, end: timeEnd } = getTimeRange();
   const slots = generateTimeSlots(timeStart, timeEnd);
-
-  let tableHtml = `
-  <table border="1" style="border-collapse:collapse; font-family: Arial, sans-serif; font-size: 11px; width:100%;">
-    <thead>
-      <tr style="background-color: #d9d9d9; height: 34px;">
-        <th style="width:70px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #94a3b8; color:#000000;">DAY</th>
-        <th style="width:110px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #94a3b8; color:#000000;">LEVEL</th>
-  `;
-
-  // Time slot headers
-  slots.forEach(slot => {
-    tableHtml += `<th style="width:52px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(slot.start)}</th>`;
-  });
-
-  // 4:00 PM header cell
-  tableHtml += `<th style="width:45px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(timeEnd)}</th>`;
-
-  tableHtml += `</tr></thead><tbody>`;
-
-  DAYS.forEach(day => {
-    const dayEntries = scheduleData.filter(e => e.day && e.day.toLowerCase() === day.toLowerCase());
-    const groups = groupByLevelProgram(dayEntries);
-
-    const groupSubRowsMap = groups.map(group => ({
-      group,
-      subRows: packEntriesIntoSubRows(group.entries, timeStart, slots)
-    }));
-
-    const totalDaySubRows = groupSubRowsMap.reduce((sum, item) => sum + item.subRows.length, 0);
-
-    if (groups.length === 0) {
-      const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
-      tableHtml += `
-        <tr style="height: 50px;">
-          <td style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626;">${day.substring(0, 3)}</td>
-          <td style="width:110px; font-weight:bold; text-align:center; vertical-align:middle; background-color:#ffffff; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626; color:#94a3b8;">—</td>
-      `;
-      slots.forEach(() => {
-        tableHtml += `<td style="background-color:#ffffff; border-right:1px solid #e2e8f0; border-bottom:3.5px solid #dc2626;"></td>`;
-      });
-      // 4:00 PM closing cell
-      tableHtml += `<td style="background-color:#ffffff; border-right:none; border-bottom:3.5px solid #dc2626;"></td></tr>`;
-    } else {
-      let isFirstDayRow = true;
-
-      groupSubRowsMap.forEach(({ group, subRows }, gIdx) => {
-        const isLastGroupInDay = gIdx === groupSubRowsMap.length - 1;
-
-        subRows.forEach((slotMap, sIdx) => {
-          const isLastSubRowInGroup = sIdx === subRows.length - 1;
-          const isDayLast = isLastGroupInDay && isLastSubRowInGroup;
-          const bottomBorderStyle = isDayLast ? 'border-bottom: 3.5px solid #dc2626;' : 'border-bottom: 1.5px solid #cbd5e1;';
-          
-          tableHtml += `<tr style="height: 60px;">`;
-
-          if (isFirstDayRow) {
-            const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
-            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626;">${day.substring(0, 3)}</td>`;
-            isFirstDayRow = false;
-          }
-
-          if (sIdx === 0) {
-            const prog = getProgramById(group.program);
-            const levelLabel = `Level ${group.level}`;
-            const levelText = group.program !== 'general' 
-              ? `<span style="font-weight:bold; color:${prog.textColor}; mso-data-placement:same-cell;">${levelLabel}</span><br/><span style="color:${prog.color}; font-size:9px; font-weight:bold; mso-data-placement:same-cell;">${prog.name}</span>`
-              : `<span style="font-weight:bold; color:#334155; mso-data-placement:same-cell;">${levelLabel}</span>`;
-
-            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border-left:3px solid ${prog.color}; border-right:2px solid #cbd5e1; ${isLastGroupInDay ? 'border-bottom:3.5px solid #dc2626;' : 'border-bottom:1.5px solid #cbd5e1;'} mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
-          }
-
-          // Slot mapping
-          let s = 0;
-          const totalColsExcel = slotMap.length;
-          while (s < totalColsExcel) {
-            if (slotMap[s] !== null) {
-              const entry = slotMap[s];
-              let span = 0;
-              while (s + span < totalColsExcel && slotMap[s + span] === entry) {
-                span++;
-              }
-
-              const entryType = entry.entryType || parseComponent(entry.component).type;
-              const parsed = parseComponent(entry.component);
-              let typeLabel = entryType === 'tutorial'
-                ? parsed.label.replace('Lab/Tutorial', 'Tut')
-                : entryType === 'lab'
-                  ? parsed.label.replace('Lab/Tutorial', 'Lab')
-                  : parsed.label.replace('Lecture ', 'Lec ');
-              if (entry.classNo) typeLabel += ` (Class No: ${entry.classNo})`;
-
-              const defaultBg = entryType === 'lecture' ? '#95b3d7' : '#da9694';
-              const defaultBorder = entryType === 'lecture' ? '#366092' : '#9c4543';
-              const cellBg = entry.customColor || defaultBg;
-              const cellBorder = entry.customColor ? adjustColorBrightness(entry.customColor, -45) : defaultBorder;
-
-              if (entryType === 'lecture') {
-                const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
-                const groupStr = groupMatch ? groupMatch[0] : '';
-                const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
-                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-
-                tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
-                    <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
-                    </span><br/>
-                    <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${formattedGroup}${classNoStr}</span>
-                    </span><br/>
-                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
-                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
-                  </td>
-                `;
-              } else {
-                let rawType = entryType === 'tutorial' ? 'Tut' : 'Lab';
-                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^(Lab|Tut(orial)?)\s*/i, '');
                 if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
                   groupStr = '-' + groupStr;
                 }
@@ -1959,6 +1924,95 @@ function importVisualExcelFile(file) {
   reader.onload = function(e) {
     try {
       const arrayBuffer = e.target.result;
+
+      // ── Step 1: Check for Master Workbook with "SIS Data" Sheet ───────────
+      if (window.XLSX) {
+        try {
+          const data = new Uint8Array(arrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+
+          const sisSheetName = workbook.SheetNames.find(n => 
+            n.toLowerCase().includes('sis') || n.toLowerCase().includes('data')
+          );
+
+          if (sisSheetName) {
+            const sisSheet = workbook.Sheets[sisSheetName];
+            const rawJson = XLSX.utils.sheet_to_json(sisSheet);
+
+            if (rawJson && rawJson.length > 0) {
+              const importedEntries = [];
+
+              rawJson.forEach(row => {
+                const getVal = (keys) => {
+                  for (const k of keys) {
+                    const keyFound = Object.keys(row).find(rk => rk.toLowerCase().trim() === k.toLowerCase());
+                    if (keyFound && row[keyFound] !== undefined && row[keyFound] !== null) {
+                      return String(row[keyFound]).trim();
+                    }
+                  }
+                  return '';
+                };
+
+                const courseCode = getVal(['course code', 'course_code', 'coursecode', 'code']);
+                const component = getVal(['component', 'comp']);
+                if (!courseCode && !component) return;
+
+                const startStr = getVal(['mtg start', 'mtg_start', 'start', 'start time', 'starttime']);
+                const endStr = getVal(['mtg end', 'mtg_end', 'end', 'end time', 'endtime']);
+                const startMin = parseTimeString(startStr);
+                const endMin = parseTimeString(endStr);
+
+                const parsed = parseComponent(component);
+                let program = getVal(['program', 'programme', 'dept']).toLowerCase();
+                if (program) {
+                  const found = PROGRAMS.find(p => p.name.toLowerCase() === program || p.id === program);
+                  program = found ? found.id : 'general';
+                } else {
+                  program = 'general';
+                }
+
+                importedEntries.push({
+                  id: generateId(),
+                  level: getVal(['level', 'lvl']) || '1',
+                  courseCode: courseCode || 'COURSE',
+                  courseName: getVal(['course name', 'course_name', 'name']),
+                  component: component || 'L1S',
+                  entryType: parsed.type,
+                  association: getVal(['association', 'assoc']) || '1',
+                  classNo: getVal(['class no', 'class_no', 'classno', 'class#']),
+                  facilityId: getVal(['facility id', 'facility_id', 'facility', 'room']),
+                  startMinutes: startMin,
+                  endMinutes: endMin,
+                  day: capitalizeDay(getVal(['day', 'days'])) || 'TBA',
+                  capacity: getVal(['capacity', 'cap', 'seats']),
+                  instructor: getVal(['instructor 1', 'instructor', 'prof']),
+                  program: program
+                });
+              });
+
+              if (importedEntries.length > 0) {
+                const uniqueMap = new Map();
+                importedEntries.forEach(entry => {
+                  const key = `${entry.day}_${entry.level}_${entry.courseCode}_${entry.component}_${entry.startMinutes}`;
+                  if (!uniqueMap.has(key)) uniqueMap.set(key, entry);
+                });
+                const cleanEntries = Array.from(uniqueMap.values());
+
+                scheduleData = cleanEntries;
+                saveData();
+                renderGrid();
+                logActivity('📥 Imported Master SIS Workbook', `Imported ${cleanEntries.length} schedule entries from Master Workbook SIS Sheet`, '📥');
+                showToast(`Successfully imported ${cleanEntries.length} schedule entries from Master SIS Sheet!`, 'success');
+                return;
+              }
+            }
+          }
+        } catch (xlsxErr) {
+          console.warn("XLSX SIS Sheet check notice, falling back to visual table parser:", xlsxErr);
+        }
+      }
+
+      // ── Step 2: Fallback to Visual Schedule Table HTML Parser ─────────────
       const textContent = new TextDecoder('utf-8').decode(new Uint8Array(arrayBuffer));
 
       let htmlDoc = null;
