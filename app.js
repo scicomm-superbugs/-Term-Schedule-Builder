@@ -2107,11 +2107,18 @@ function importVisualExcelFile(file) {
 
             let facilityId = '';
             let capacity = '';
-            const facLine = cellLines.find(l => l.includes('📍') || l.startsWith('B') || l.includes('-')) || '';
-            const facMatch = (facLine || fullCellTxt).match(/📍?\s*([A-Z0-9/-]+)\s*(?:\((\d+)\))?/i);
-            if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
-              facilityId = facMatch[1].trim();
-              if (facMatch[2]) capacity = facMatch[2].trim();
+
+            const pinMatch = fullCellTxt.match(/📍\s*([A-Z0-9/._-]+)\s*(?:\((\d+)\))?/i);
+            if (pinMatch) {
+              facilityId = pinMatch[1].trim();
+              if (pinMatch[2]) capacity = pinMatch[2].trim();
+            } else {
+              const facLine = cellLines.find(l => l.includes('📍') || l.startsWith('B') || l.includes('-')) || '';
+              const facMatch = (facLine || fullCellTxt).match(/(?:📍|Room|Building)?\s*([A-Z0-9]{1,4}[-/A-Z0-9._]+)\s*(?:\((\d+)\))?/i);
+              if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
+                facilityId = facMatch[1].trim();
+                if (facMatch[2]) capacity = facMatch[2].trim();
+              }
             }
 
             let association = '1';
