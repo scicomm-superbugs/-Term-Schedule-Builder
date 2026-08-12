@@ -1869,14 +1869,16 @@ function importVisualExcelFile(file) {
 
   reader.onload = function(e) {
     try {
-      const content = e.target.result;
+      const arrayBuffer = e.target.result;
+      const textContent = new TextDecoder('utf-8').decode(new Uint8Array(arrayBuffer));
+
       let htmlDoc = null;
 
-      if (typeof content === 'string' && (content.includes('<table') || content.includes('<html'))) {
+      if (textContent.includes('<table') || textContent.includes('<tr') || textContent.includes('<html')) {
         const parser = new DOMParser();
-        htmlDoc = parser.parseFromString(content, 'text/html');
+        htmlDoc = parser.parseFromString(textContent, 'text/html');
       } else if (window.XLSX) {
-        const data = new Uint8Array(content);
+        const data = new Uint8Array(arrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const htmlStr = XLSX.utils.sheet_to_html(workbook.Sheets[firstSheetName]);
@@ -1885,23 +1887,24 @@ function importVisualExcelFile(file) {
       }
 
       if (!htmlDoc) {
-        showToast('Unsupported file format. Please upload a Visual Excel (.xls/.xlsx/.html) file.', 'error');
+        showToast('Could not read table structure from file.', 'error');
         return;
       }
 
       const table = htmlDoc.querySelector('table');
       if (!table) {
-        showToast('No table grid found in the uploaded file.', 'error');
+        showToast('No schedule table grid found in the file.', 'error');
         return;
       }
 
       const rows = Array.from(table.querySelectorAll('tr'));
       if (rows.length < 2) {
-        showToast('Table structure invalid or empty.', 'error');
+        showToast('Table contains no rows.', 'error');
         return;
       }
 
-      let headerRow = rows.find(r => r.querySelector('th') || r.innerText.includes('DAY'));
+      // Step 1: Find Header Row
+      let headerRow = rows.find(r => r.querySelector('th') || r.innerText.includes('DAY') || r.innerText.includes('9:00 AM'));
       if (!headerRow) headerRow = rows[0];
 
       const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
@@ -1913,7 +1916,8 @@ function importVisualExcelFile(file) {
         headerTimes.push(mins);
       });
 
-      const newEntries = [];
+      // Step 2: Parse Body Rows
+      const importedEntries = [];
       let currentDay = 'Sunday';
       let currentLevel = '1';
       let currentProgram = 'general';
@@ -1926,15 +1930,17 @@ function importVisualExcelFile(file) {
 
         cells.forEach(td => {
           const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
-          const txt = td.textContent.trim();
+          const txt = td.textContent.replace(/\s+/g, ' ').trim();
 
+          // Check Day cell
           const dayMatch = DAYS.find(d => txt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
-          if (dayMatch) {
+          if (dayMatch && colTracker === 0) {
             currentDay = dayMatch;
           }
 
+          // Check Level cell
           const levelMatch = txt.match(/Level\s*(\d+)/i);
-          if (levelMatch) {
+          if (levelMatch && (colTracker === 0 || colTracker === 1)) {
             currentLevel = levelMatch[1];
             if (/Biotech/i.test(txt)) currentProgram = 'biotech';
             else if (/Chemistry/i.test(txt)) currentProgram = 'chemistry';
@@ -1943,13 +1949,21 @@ function importVisualExcelFile(file) {
             else currentProgram = 'general';
           }
 
-          const courseMatch = txt.match(/([A-Z]{2,4}\d{3})\s*(?:-\s*([^👤📍\n]+))?/);
-          if (courseMatch && !txt.includes('DAY') && !txt.includes('LEVEL')) {
-            const courseCode = courseMatch[1];
-            let courseName = courseMatch[2] ? courseMatch[2].trim() : '';
+          // Check Course Entry cell
+          const courseCodeMatch = txt.match(/([A-Z]{2,4}\s*\d{3})/i);
+          if (courseCodeMatch && !txt.includes('DAY') && !txt.includes('LEVEL') && colTracker >= 2) {
+            const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
 
+            // Extract Course Name
+            let courseName = '';
+            const nameMatch = txt.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍\n\r(]+)/i);
+            if (nameMatch) {
+              courseName = nameMatch[2].trim();
+            }
+
+            // Calculate start & end minutes from column position
             let startMin = headerTimes[colTracker];
-            let endMin = headerTimes[colTracker + colSpan];
+            let endMin = headerTimes[colTracker + colSpan - 1];
 
             if (startMin === null || startMin === undefined) {
               startMin = 540 + Math.max(0, colTracker - 2) * 15;
@@ -1983,13 +1997,15 @@ function importVisualExcelFile(file) {
             if (classMatch) classNo = classMatch[1];
 
             let instructor = '';
-            const instMatch = txt.match(/👤\s*([^📍\n]+)/);
-            if (instMatch) instructor = instMatch[1].trim();
+            const instMatch = txt.match(/(?:👤|د\.|أ\.د\.|م\.)\s*([^\n\r📍]+)/);
+            if (instMatch) {
+              instructor = instMatch[0].replace('👤', '').trim();
+            }
 
             let facilityId = '';
             let capacity = '';
-            const facMatch = txt.match(/📍\s*([A-Za-z0-9-]+)(?:\s*\((\d+)\))?/);
-            if (facMatch) {
+            const facMatch = txt.match(/📍?\s*([A-Z0-9/-]+)\s*(?:\((\d+)\))?/i);
+            if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
               facilityId = facMatch[1].trim();
               if (facMatch[2]) capacity = facMatch[2].trim();
             }
@@ -1998,7 +2014,7 @@ function importVisualExcelFile(file) {
             const assocMatch = component.match(/\d+/);
             if (assocMatch) association = assocMatch[0];
 
-            newEntries.push({
+            importedEntries.push({
               id: generateId(),
               day: currentDay,
               level: currentLevel,
@@ -2021,27 +2037,23 @@ function importVisualExcelFile(file) {
         });
       });
 
-      if (newEntries.length === 0) {
-        showToast('No valid schedule entries found in the file.', 'warning');
+      if (importedEntries.length === 0) {
+        showToast('No valid schedule entries detected in the uploaded file.', 'warning');
         return;
       }
 
-      scheduleData = [...scheduleData, ...newEntries];
+      scheduleData = importedEntries;
       saveData();
       renderGrid();
-      logActivity('📥 Imported Visual Excel', `Imported ${newEntries.length} entries from Visual Excel Sheet`, '📥');
-      showToast(`Successfully imported ${newEntries.length} schedule entries!`, 'success');
+      logActivity('📥 Imported Visual Excel', `Imported ${importedEntries.length} schedule entries from Visual Excel Sheet`, '📥');
+      showToast(`Successfully imported ${importedEntries.length} schedule entries!`, 'success');
     } catch (err) {
       console.error('Failed to parse Visual Excel file:', err);
       showToast('Failed to parse Visual Excel file: ' + err.message, 'error');
     }
   };
 
-  if (file.name.endsWith('.html') || file.name.endsWith('.htm') || file.type.includes('text/html')) {
-    reader.readAsText(file);
-  } else {
-    reader.readAsArrayBuffer(file);
-  }
+  reader.readAsArrayBuffer(file);
 }
 
 // ─── Import Schedule State ───────────────────────────────────────────────────
