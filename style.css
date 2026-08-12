@@ -201,6 +201,14 @@ body {
 
 .btn:active { transform: translateY(0); }
 
+.btn * {
+  pointer-events: none;
+}
+
+.header, .header-actions, .btn {
+  pointer-events: auto !important;
+}
+
 .btn-primary {
   background: linear-gradient(135deg, var(--accent-blue) 0%, #3a7ae0 100%);
   border-color: transparent;
@@ -1240,9 +1248,7 @@ body {
 
 /* ── Toast ──────────────────────────────────────────────────────────────── */
 .app.page-locked {
-  filter: blur(12px) grayscale(30%);
-  pointer-events: none !important;
-  user-select: none !important;
+  filter: blur(4px) grayscale(20%);
   transition: filter 0.3s ease;
 }
 

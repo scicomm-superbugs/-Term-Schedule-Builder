@@ -301,15 +301,16 @@ function updateAuthHeaderUI() {
   }
 
   // Update header buttons visual disabled state if signed out
-  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-activity-log', 'btn-add', 'btn-clear'];
+  const actionButtons = ['btn-import', 'btn-export', 'btn-import-visual', 'btn-export-visual', 'btn-activity-log', 'btn-add', 'btn-clear'];
   actionButtons.forEach(id => {
     const btn = document.getElementById(id);
     if (btn) {
       if (!currentUser) {
-        btn.style.opacity = '0.7';
+        btn.style.opacity = '0.75';
         btn.title = '🔐 Sign In required to use this action';
       } else {
         btn.style.opacity = '1';
+        btn.title = btn.getAttribute('data-title') || btn.title;
       }
     }
   });
