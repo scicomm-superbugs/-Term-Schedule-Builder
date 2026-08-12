@@ -1574,6 +1574,35 @@ function capitalizeDay(day) {
   return map[d] || day.charAt(0).toUpperCase() + day.slice(1).toLowerCase();
 }
 
+// ─── Time String Parser (handles 9:00 AM, 9:15, 13:30, and Excel floats) ────
+function parseTimeString(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+
+  // Handle Excel fraction float time (e.g. 0.375 = 9:00 AM)
+  const num = parseFloat(s);
+  if (!isNaN(num) && num > 0 && num < 1) {
+    const totalMinutes = Math.round(num * 24 * 60);
+    return totalMinutes;
+  }
+
+  // Handle 12-hour or 24-hour time strings like "9:00 AM", "09:15", "10:30 AM", "1:15 PM", "13:30"
+  const match = s.match(/(\d{1,2})[:.](\d{2})(?:\s*(AM|PM))?/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const ampm = match[3] ? match[3].toUpperCase() : null;
+
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    if (!ampm && hours >= 1 && hours <= 4) hours += 12;
+
+    return hours * 60 + minutes;
+  }
+
+  return null;
+}
+
 // ─── Arabic Mojibake Auto-Fix Helper ─────────────────────────────────────────
 function fixMojibake(str) {
   if (!str || typeof str !== 'string') return str;
@@ -1707,6 +1736,8 @@ function parseVisualHtmlTable(htmlContent) {
   const previewDiv = document.getElementById('import-visual-preview');
   const btnConfirm = document.getElementById('btn-confirm-import-visual');
 
+  if (!previewDiv || !btnConfirm) return;
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlContent, 'text/html');
   const table = doc.querySelector('table');
@@ -1718,32 +1749,46 @@ function parseVisualHtmlTable(htmlContent) {
     return;
   }
 
-  const ths = table.querySelectorAll('thead th, tr:first-child th, tr:first-child td');
-  const headerTimeMap = [];
-  const timeStart = 540;
-  let colIdx = 0;
+  const rows = Array.from(table.querySelectorAll('tr'));
+  if (!rows.length) {
+    previewDiv.classList.remove('hidden');
+    previewDiv.innerHTML = `<div style="color:var(--danger); font-weight:bold; padding:10px;">❌ Table is empty.</div>`;
+    btnConfirm.classList.add('hidden');
+    return;
+  }
 
-  ths.forEach(cell => {
+  // 1. Header Time Slot Mapping
+  const headerTimeMap = [];
+  const timeStart = 540; // 9:00 AM
+  let firstRowCells = Array.from(rows[0].querySelectorAll('th, td'));
+
+  if (firstRowCells.length <= 3 && rows.length > 1) {
+    const secondRowCells = Array.from(rows[1].querySelectorAll('th, td'));
+    if (secondRowCells.length > firstRowCells.length) firstRowCells = secondRowCells;
+  }
+
+  let colIdx = 0;
+  firstRowCells.forEach(cell => {
     const text = cell.textContent.trim();
     if (text.toUpperCase() === 'DAY' || text.toUpperCase() === 'LEVEL') return;
 
-    const timeMin = parseTimeString(text);
-    if (timeMin !== null) {
-      headerTimeMap[colIdx] = timeMin;
+    const parsedMin = parseTimeString(text);
+    if (parsedMin !== null && parsedMin >= 480 && parsedMin <= 1100) {
+      headerTimeMap[colIdx] = parsedMin;
     } else {
       headerTimeMap[colIdx] = timeStart + colIdx * 15;
     }
     colIdx++;
   });
 
-  const rows = table.querySelectorAll('tbody tr, tr');
+  // 2. Parse Rows for Schedule Entries
   const entries = [];
   let currentDay = 'Saturday';
   let currentLevel = '1';
   let currentProgram = 'general';
 
   rows.forEach(tr => {
-    const tds = tr.querySelectorAll('td');
+    const tds = Array.from(tr.querySelectorAll('td, th'));
     if (!tds.length) return;
 
     let cellColIdx = 0;
@@ -1752,7 +1797,7 @@ function parseVisualHtmlTable(htmlContent) {
       const text = td.textContent.trim();
       const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
       const isDayCell = td.classList.contains('sched-day') || text.match(/^(Sat|Sun|Mon|Tue|Wed|Thu|Fri)/i);
-      const isLevelCell = td.classList.contains('sched-level') || text.toLowerCase().includes('level');
+      const isLevelCell = td.classList.contains('sched-level') || text.toLowerCase().includes('level') || text.match(/^L(evel)?\s*\d+/i);
 
       if (isDayCell && cellColIdx === 0) {
         const matchedDay = DAYS.find(d => d.toLowerCase().startsWith(text.substring(0, 3).toLowerCase()));
@@ -1761,7 +1806,7 @@ function parseVisualHtmlTable(htmlContent) {
       }
 
       if (isLevelCell && cellColIdx <= 1) {
-        const lvlMatch = text.match(/Level\s*(\d+)/i);
+        const lvlMatch = text.match(/Level\s*(\d+)/i) || text.match(/^L\s*(\d+)/i) || text.match(/^(\d+)$/);
         if (lvlMatch) currentLevel = lvlMatch[1];
 
         const matchedProg = PROGRAMS.find(p => text.toLowerCase().includes(p.name.toLowerCase()) || text.toLowerCase().includes(p.id.toLowerCase()));
@@ -1770,28 +1815,32 @@ function parseVisualHtmlTable(htmlContent) {
         return;
       }
 
-      const isEntry = text.length > 3 && (
-        text.match(/[A-Z]{2,4}\s*\d{3}/i) ||
-        text.includes('Lecture') || text.includes('Lab') || text.includes('Tut')
-      );
+      const hasCode = text.match(/([A-Z]{2,4}\s*\d{3})/i);
+      const hasType = text.includes('Lecture') || text.includes('Lab') || text.includes('Tut') || text.includes('Lec');
 
-      if (isEntry) {
+      if (hasCode || (hasType && text.length > 3)) {
         const startMin = headerTimeMap[cellColIdx] !== undefined 
           ? headerTimeMap[cellColIdx] 
           : timeStart + cellColIdx * 15;
         const endMin = startMin + colSpan * 15;
 
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        const line1 = lines[0] || '';
-        const codeMatch = line1.match(/([A-Z]{2,4}\s*\d{3})/i);
-        const courseCode = codeMatch ? codeMatch[1].replace(/\s+/, '').toUpperCase() : line1.split('-')[0].trim().toUpperCase();
+        const rawLines = td.innerHTML.split(/<br\s*\/?>|\n|\r/i);
+        const lines = rawLines.map(l => {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = l;
+          return tmp.textContent.replace(/[👤📍]/g, '').trim();
+        }).filter(Boolean);
+
+        const line1 = lines[0] || text;
+        const codeMatch = line1.match(/([A-Z]{2,4}\s*\d{3})/i) || text.match(/([A-Z]{2,4}\s*\d{3})/i);
+        const courseCode = codeMatch ? codeMatch[1].replace(/\s+/, '').toUpperCase() : 'COURSE';
 
         let courseName = '';
         if (line1.includes('-')) {
           courseName = line1.substring(line1.indexOf('-') + 1).trim();
         }
 
-        const line2 = lines.find(l => l.includes('Lecture') || l.includes('Lab') || l.includes('Tut') || l.includes('Lec')) || '';
+        const line2 = lines.find(l => l.includes('Lecture') || l.includes('Lab') || l.includes('Tut') || l.includes('Lec')) || text;
         let entryType = 'lecture';
         if (line2.toLowerCase().includes('lab')) entryType = 'lab';
         else if (line2.toLowerCase().includes('tut')) entryType = 'tutorial';
@@ -1810,10 +1859,7 @@ function parseVisualHtmlTable(htmlContent) {
         const classMatch = text.match(/Class No:\s*(\d+)/i) || text.match(/\(Class No:\s*(\d+)\)/i);
         if (classMatch) classNo = classMatch[1];
 
-        const line3 = lines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د') || l.toLowerCase().includes('dr.')) || '';
-        const instructor = line3.replace('👤', '').trim();
-
-        const line4 = lines.find(l => l.includes('📍') || l.match(/[A-Z0-9]+-[A-Z0-9]+/)) || '';
+        let instructor = '';
         let facilityId = '';
         let capacity = '';
         if (line4) {
