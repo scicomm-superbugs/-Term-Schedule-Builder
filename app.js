@@ -1746,97 +1746,163 @@ function csvEscape(str) {
   return str;
 }
 
-// ─── Dual-Sheet Master Excel Exporter & Visual Grid Exporter ────────────────
+// ─── Visual Schedule Excel Exporter ──────────────────────────────────────────
 function exportVisualExcel() {
   if (scheduleData.length === 0) {
     showToast('No entries in schedule to export', 'error');
     return;
   }
 
-  if (typeof XLSX !== 'undefined') {
-    try {
-      const wb = XLSX.utils.book_new();
+  const { start: timeStart, end: timeEnd } = getTimeRange();
+  const slots = generateTimeSlots(timeStart, timeEnd);
 
-      // ── Sheet 1: Visual Schedule ──────────────────────────────────────────
-      const tableEl = document.querySelector('#grid-container table');
-      let wsVisual;
-      if (tableEl) {
-        wsVisual = XLSX.utils.table_to_sheet(tableEl);
-      } else {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = generateVisualTableHtml();
-        wsVisual = XLSX.utils.table_to_sheet(tempDiv.querySelector('table'));
-      }
+  let tableHtml = `
+  <table border="1" style="border-collapse:collapse; font-family: Arial, sans-serif; font-size: 11px; width:100%;">
+    <thead>
+      <tr style="background-color: #d9d9d9; height: 34px;">
+        <th style="width:70px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #94a3b8; color:#000000;">DAY</th>
+        <th style="width:110px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #94a3b8; color:#000000;">LEVEL</th>
+  `;
 
-      // ── Sheet 2: SIS Data ────────────────────────────────────────────────
-      const sisRows = scheduleData.map(entry => {
-        const parsed = parseComponent(entry.component);
-        const typeLabel = entry.entryType || parsed.type;
+  // Time slot headers
+  slots.forEach(slot => {
+    tableHtml += `<th style="width:52px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(slot.start)}</th>`;
+  });
 
-        let componentFormatted = entry.component;
-        if (typeLabel === 'lecture') {
-          const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
-          const groupStr = groupMatch ? groupMatch[0] : '';
-          componentFormatted = `Lecture ${groupStr}`.trim();
-        } else if (typeLabel === 'lab') {
-          componentFormatted = `Lab ${entry.component.replace(/^Lab-?/i, '')}`.trim();
-        } else if (typeLabel === 'tutorial') {
-          componentFormatted = `Tutorial ${entry.component.replace(/^Tut(orial)?-?/i, '')}`.trim();
-        }
+  // 4:00 PM header cell
+  tableHtml += `<th style="width:45px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(timeEnd)}</th>`;
 
-        return {
-          'Level': entry.level || '1',
-          'Course Code': entry.courseCode || '',
-          'Course Name': entry.courseName || '',
-          'Component': componentFormatted,
-          'Class No': entry.classNo || '',
-          'Facility ID': entry.facilityId || '',
-          'Mtg Start': (entry.startMinutes !== null && entry.startMinutes !== undefined) ? minutesToTimeString(entry.startMinutes) : 'TBA',
-          'Mtg End': (entry.endMinutes !== null && entry.endMinutes !== undefined) ? minutesToTimeString(entry.endMinutes) : 'TBA',
-          'Day': entry.day || 'TBA',
-          'Capacity': entry.capacity || '',
-          'Instructor 1': entry.instructor || '',
-          'Program': entry.program || 'general'
-        };
+  tableHtml += `</tr></thead><tbody>`;
+
+  DAYS.forEach(day => {
+    const dayEntries = scheduleData.filter(e => e.day && e.day.toLowerCase() === day.toLowerCase());
+    const groups = groupByLevelProgram(dayEntries);
+
+    const groupSubRowsMap = groups.map(group => ({
+      group,
+      subRows: packEntriesIntoSubRows(group.entries, timeStart, slots)
+    }));
+
+    const totalDaySubRows = groupSubRowsMap.reduce((sum, item) => sum + item.subRows.length, 0);
+
+    if (groups.length === 0) {
+      const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
+      tableHtml += `
+        <tr style="height: 50px;">
+          <td style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626;">${day.substring(0, 3)}</td>
+          <td style="width:110px; font-weight:bold; text-align:center; vertical-align:middle; background-color:#ffffff; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626; color:#94a3b8;">—</td>
+      `;
+      slots.forEach(() => {
+        tableHtml += `<td style="background-color:#ffffff; border-right:1px solid #e2e8f0; border-bottom:3.5px solid #dc2626;"></td>`;
       });
+      // 4:00 PM closing cell
+      tableHtml += `<td style="background-color:#ffffff; border-right:none; border-bottom:3.5px solid #dc2626;"></td></tr>`;
+    } else {
+      let isFirstDayRow = true;
 
-      const wsSIS = XLSX.utils.json_to_sheet(sisRows);
+      groupSubRowsMap.forEach(({ group, subRows }, gIdx) => {
+        const isLastGroupInDay = gIdx === groupSubRowsMap.length - 1;
 
-      // Set column widths for SIS Data sheet
-      wsSIS['!cols'] = [
-        { wch: 8 },  // Level
-        { wch: 14 }, // Course Code
-        { wch: 32 }, // Course Name
-        { wch: 22 }, // Component
-        { wch: 12 }, // Class No
-        { wch: 22 }, // Facility ID
-        { wch: 12 }, // Mtg Start
-        { wch: 12 }, // Mtg End
-        { wch: 12 }, // Day
-        { wch: 10 }, // Capacity
-        { wch: 30 }, // Instructor 1
-        { wch: 18 }  // Program
-      ];
+        subRows.forEach((slotMap, sIdx) => {
+          const isLastSubRowInGroup = sIdx === subRows.length - 1;
+          const isDayLast = isLastGroupInDay && isLastSubRowInGroup;
+          const bottomBorderStyle = isDayLast ? 'border-bottom: 3.5px solid #dc2626;' : 'border-bottom: 1.5px solid #cbd5e1;';
+          
+          tableHtml += `<tr style="height: 60px;">`;
 
-      XLSX.utils.book_append_sheet(wb, wsVisual, "Visual Schedule");
-      XLSX.utils.book_append_sheet(wb, wsSIS, "SIS Data");
+          if (isFirstDayRow) {
+            const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
+            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626;">${day.substring(0, 3)}</td>`;
+            isFirstDayRow = false;
+          }
 
-      const fileName = `Term_Schedule_Master_Workbook_${getDateStamp()}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      logActivity('📊 Exported Master Excel', `Exported dual-sheet workbook with Visual & SIS sheets (${scheduleData.length} entries)`, '📊');
-      showToast(`Master Excel Workbook exported with Visual & SIS sheets!`, 'success');
-      return;
-    } catch (err) {
-      console.warn("SheetJS export notice, falling back to HTML export:", err);
+          if (sIdx === 0) {
+            const prog = getProgramById(group.program);
+            const levelLabel = `Level ${group.level}`;
+            const levelText = group.program !== 'general' 
+              ? `<span style="font-weight:bold; color:${prog.textColor}; mso-data-placement:same-cell;">${levelLabel}</span><br/><span style="color:${prog.color}; font-size:9px; font-weight:bold; mso-data-placement:same-cell;">${prog.name}</span>`
+              : `<span style="font-weight:bold; color:#334155; mso-data-placement:same-cell;">${levelLabel}</span>`;
+
+            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border-left:3px solid ${prog.color}; border-right:2px solid #cbd5e1; ${isLastGroupInDay ? 'border-bottom:3.5px solid #dc2626;' : 'border-bottom:1.5px solid #cbd5e1;'} mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
+          }
+
+          // Slot mapping
+          let s = 0;
+          const totalColsExcel = slotMap.length;
+          while (s < totalColsExcel) {
+            if (slotMap[s] !== null) {
+              const entry = slotMap[s];
+              let span = 0;
+              while (s + span < totalColsExcel && slotMap[s + span] === entry) {
+                span++;
+              }
+
+              const entryType = entry.entryType || parseComponent(entry.component).type;
+              const parsed = parseComponent(entry.component);
+              let typeLabel = entryType === 'tutorial'
+                ? parsed.label.replace('Lab/Tutorial', 'Tut')
+                : entryType === 'lab'
+                  ? parsed.label.replace('Lab/Tutorial', 'Lab')
+                  : parsed.label.replace('Lecture ', 'Lec ');
+              if (entry.classNo) typeLabel += ` (Class No: ${entry.classNo})`;
+
+              const defaultBg = entryType === 'lecture' ? '#95b3d7' : '#da9694';
+              const defaultBorder = entryType === 'lecture' ? '#366092' : '#9c4543';
+              const cellBg = entry.customColor || defaultBg;
+              const cellBorder = entry.customColor ? adjustColorBrightness(entry.customColor, -45) : defaultBorder;
+
+              if (entryType === 'lecture') {
+                const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
+                const groupStr = groupMatch ? groupMatch[0] : '';
+                const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
+                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+
+                tableHtml += `
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                    <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
+                      <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
+                    </span><br/>
+                    <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
+                      <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${formattedGroup}${classNoStr}</span>
+                    </span><br/>
+                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
+                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
+                  </td>
+                `;
+              } else {
+                let rawType = entryType === 'tutorial' ? 'Tut' : 'Lab';
+                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^(Lab|Tut(orial)?)\s*/i, '');
+                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
+                  groupStr = '-' + groupStr;
+                }
+                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+
+                tableHtml += `
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                    <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
+                      <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
+                    </span><br/>
+                    <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
+                      <span style="color:#0000ff;">${rawType}</span><span style="color:#ff0000;">${groupStr}${classNoStr}</span>
+                    </span><br/>
+                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
+                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
+                  </td>
+                `;
+              }
+              s += span;
+            } else {
+              tableHtml += `<td style="background-color:#ffffff; border-right:1px solid #e2e8f0; ${bottomBorderStyle}"></td>`;
+              s++;
+            }
+          }
+          tableHtml += `</tr>`;
+        });
+      });
     }
-  }
+  });
 
-  exportVisualExcelHTML();
-}
-
-function exportVisualExcelHTML() {
-  const tableEl = document.querySelector('#grid-container table');
-  let tableHtml = tableEl ? tableEl.outerHTML : '';
+  tableHtml += `</tbody></table>`;
 
   const excelDocument = `
   <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -1893,95 +1959,6 @@ function importVisualExcelFile(file) {
   reader.onload = function(e) {
     try {
       const arrayBuffer = e.target.result;
-
-      // ── Step 1: Check for Master Workbook with "SIS Data" Sheet ───────────
-      if (window.XLSX) {
-        try {
-          const data = new Uint8Array(arrayBuffer);
-          const workbook = XLSX.read(data, { type: 'array' });
-
-          const sisSheetName = workbook.SheetNames.find(n => 
-            n.toLowerCase().includes('sis') || n.toLowerCase().includes('data')
-          );
-
-          if (sisSheetName) {
-            const sisSheet = workbook.Sheets[sisSheetName];
-            const rawJson = XLSX.utils.sheet_to_json(sisSheet);
-
-            if (rawJson && rawJson.length > 0) {
-              const importedEntries = [];
-
-              rawJson.forEach(row => {
-                const getVal = (keys) => {
-                  for (const k of keys) {
-                    const keyFound = Object.keys(row).find(rk => rk.toLowerCase().trim() === k.toLowerCase());
-                    if (keyFound && row[keyFound] !== undefined && row[keyFound] !== null) {
-                      return String(row[keyFound]).trim();
-                    }
-                  }
-                  return '';
-                };
-
-                const courseCode = getVal(['course code', 'course_code', 'coursecode', 'code']);
-                const component = getVal(['component', 'comp']);
-                if (!courseCode && !component) return;
-
-                const startStr = getVal(['mtg start', 'mtg_start', 'start', 'start time', 'starttime']);
-                const endStr = getVal(['mtg end', 'mtg_end', 'end', 'end time', 'endtime']);
-                const startMin = parseTimeString(startStr);
-                const endMin = parseTimeString(endStr);
-
-                const parsed = parseComponent(component);
-                let program = getVal(['program', 'programme', 'dept']).toLowerCase();
-                if (program) {
-                  const found = PROGRAMS.find(p => p.name.toLowerCase() === program || p.id === program);
-                  program = found ? found.id : 'general';
-                } else {
-                  program = 'general';
-                }
-
-                importedEntries.push({
-                  id: generateId(),
-                  level: getVal(['level', 'lvl']) || '1',
-                  courseCode: courseCode || 'COURSE',
-                  courseName: getVal(['course name', 'course_name', 'name']),
-                  component: component || 'L1S',
-                  entryType: parsed.type,
-                  association: getVal(['association', 'assoc']) || '1',
-                  classNo: getVal(['class no', 'class_no', 'classno', 'class#']),
-                  facilityId: getVal(['facility id', 'facility_id', 'facility', 'room']),
-                  startMinutes: startMin,
-                  endMinutes: endMin,
-                  day: capitalizeDay(getVal(['day', 'days'])) || 'TBA',
-                  capacity: getVal(['capacity', 'cap', 'seats']),
-                  instructor: getVal(['instructor 1', 'instructor', 'prof']),
-                  program: program
-                });
-              });
-
-              if (importedEntries.length > 0) {
-                const uniqueMap = new Map();
-                importedEntries.forEach(entry => {
-                  const key = `${entry.day}_${entry.level}_${entry.courseCode}_${entry.component}_${entry.startMinutes}`;
-                  if (!uniqueMap.has(key)) uniqueMap.set(key, entry);
-                });
-                const cleanEntries = Array.from(uniqueMap.values());
-
-                scheduleData = cleanEntries;
-                saveData();
-                renderGrid();
-                logActivity('📥 Imported Master SIS Workbook', `Imported ${cleanEntries.length} schedule entries from Master Workbook SIS Sheet`, '📥');
-                showToast(`Successfully imported ${cleanEntries.length} schedule entries from Master SIS Sheet!`, 'success');
-                return;
-              }
-            }
-          }
-        } catch (xlsxErr) {
-          console.warn("XLSX SIS Sheet check notice, falling back to visual table parser:", xlsxErr);
-        }
-      }
-
-      // ── Step 2: Fallback to Visual Schedule Table HTML Parser ─────────────
       const textContent = new TextDecoder('utf-8').decode(new Uint8Array(arrayBuffer));
 
       let htmlDoc = null;
@@ -2015,175 +1992,230 @@ function importVisualExcelFile(file) {
         return;
       }
 
-      // Step 1: Find Header Row
-      let headerRow = rows.find(r => r.querySelector('th') || r.innerText.includes('DAY') || r.innerText.includes('9:00 AM'));
-      if (!headerRow) headerRow = rows[0];
+      // ─── Step 1: Build a 2D grid resolving ALL rowspan/colspan ───
+      // grid[r][c] = { td: <HTMLElement>, originRow: r, originCol: c }
+      // This ensures every logical cell position knows which <td> occupies it.
+      const numRows = rows.length;
+      const grid = [];
+      for (let r = 0; r < numRows; r++) grid[r] = [];
 
-      const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
-      const headerTimes = [];
+      for (let r = 0; r < numRows; r++) {
+        const cells = Array.from(rows[r].querySelectorAll('td, th'));
+        let cIdx = 0; // pointer into cells[]
+        let gCol = 0; // pointer into grid columns
 
-      headerCells.forEach((cell) => {
-        const txt = cell.textContent.trim();
-        const mins = parseSlotLabelToMinutes(txt);
-        headerTimes.push(mins);
-      });
+        for (let ci = 0; ci < cells.length; ci++) {
+          // Skip columns already filled by a prior rowspan
+          while (grid[r][gCol]) gCol++;
 
-      // Step 2: Parse Body Rows
+          const td = cells[ci];
+          const rs = parseInt(td.getAttribute('rowspan') || '1', 10);
+          const cs = parseInt(td.getAttribute('colspan') || '1', 10);
+
+          // Fill the grid block [r..r+rs-1][gCol..gCol+cs-1]
+          for (let dr = 0; dr < rs; dr++) {
+            for (let dc = 0; dc < cs; dc++) {
+              if (r + dr < numRows) {
+                if (!grid[r + dr]) grid[r + dr] = [];
+                grid[r + dr][gCol + dc] = { td, originRow: r, originCol: gCol };
+              }
+            }
+          }
+          gCol += cs;
+        }
+      }
+
+      // ─── Step 2: Find header row and extract time slot map ───
+      let headerRowIdx = 0;
+      for (let r = 0; r < numRows; r++) {
+        const rowText = rows[r].textContent || '';
+        if (rowText.includes('DAY') || rowText.includes('LEVEL') || rowText.includes('9:00 AM') || rows[r].querySelector('th')) {
+          headerRowIdx = r;
+          break;
+        }
+      }
+
+      // Build column → minutes map from the header row
+      const numCols = grid[headerRowIdx] ? grid[headerRowIdx].length : 0;
+      const colToMinutes = [];
+      for (let c = 0; c < numCols; c++) {
+        const cell = grid[headerRowIdx][c];
+        if (cell && cell.originRow === headerRowIdx && cell.originCol === c) {
+          const txt = cell.td.textContent.trim();
+          colToMinutes[c] = parseSlotLabelToMinutes(txt);
+        } else {
+          colToMinutes[c] = null;
+        }
+      }
+
+      // Identify which columns are DAY (col 0) and LEVEL (col 1) vs time data (col >= 2)
+      // The header has "DAY" at col 0, "LEVEL" at col 1, then time slots from col 2 onward.
+
+      // ─── Step 3: Parse body rows using resolved grid ───
       const importedEntries = [];
-      let currentDay = 'Sunday';
+      let currentDay = 'Saturday';
       let currentLevel = '1';
       let currentProgram = 'general';
 
-      const bodyRows = rows.filter(r => r !== headerRow);
+      for (let r = headerRowIdx + 1; r < numRows; r++) {
+        if (!grid[r]) continue;
+        const rowCols = grid[r].length;
 
-      bodyRows.forEach(tr => {
-        const cells = Array.from(tr.querySelectorAll('td, th'));
-        if (cells.length === 0) return;
-
-        // Determine starting colTracker for this row based on presence of Day / Level cells
-        let colTracker = 0;
-        const firstCellTxt = cells[0] ? cells[0].textContent.replace(/\s+/g, ' ').trim() : '';
-        const isFirstDay = DAYS.some(d => firstCellTxt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
-        const isFirstLevel = /Level\s*\d+/i.test(firstCellTxt);
-
-        if (!isFirstDay && !isFirstLevel) {
-          colTracker = 2; // Row starts directly at time column 9:00 AM (index 2)
-        } else if (!isFirstDay && isFirstLevel) {
-          colTracker = 1; // Row starts at Level column (index 1)
-        } else {
-          colTracker = 0; // Row starts at Day column (index 0)
+        // Read DAY from column 0 (only when this row is the origin of that cell)
+        if (grid[r][0]) {
+          const dayCell = grid[r][0];
+          if (dayCell.originRow === r && dayCell.originCol === 0) {
+            const dayTxt = dayCell.td.textContent.replace(/\s+/g, ' ').trim();
+            const dm = DAYS.find(d => dayTxt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
+            if (dm) currentDay = dm;
+          }
         }
 
-        cells.forEach(td => {
-          const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
+        // Read LEVEL from column 1 (only when this row is the origin of that cell)
+        if (grid[r][1]) {
+          const lvlCell = grid[r][1];
+          if (lvlCell.originRow === r && lvlCell.originCol === 1) {
+            const lvlTxt = lvlCell.td.textContent.replace(/\s+/g, ' ').trim();
+            const lm = lvlTxt.match(/Level\s*(\d+)/i);
+            if (lm) {
+              currentLevel = lm[1];
+              if (/Biotech/i.test(lvlTxt)) currentProgram = 'biotech';
+              else if (/Chemistry/i.test(lvlTxt)) currentProgram = 'chemistry';
+              else if (/Renewable/i.test(lvlTxt)) currentProgram = 'renewable';
+              else if (/Engineering/i.test(lvlTxt)) currentProgram = 'engineering';
+              else currentProgram = 'general';
+            }
+          }
+        }
+
+        // Scan time-slot columns (col >= 2) for course entries
+        let c = 2;
+        while (c < rowCols) {
+          const cellInfo = grid[r][c];
+          if (!cellInfo) { c++; continue; }
+
+          // Only process if this row is the origin row of the cell (avoid double-counting rowspanned cells)
+          if (cellInfo.originRow !== r || cellInfo.originCol !== c) { c++; continue; }
+
+          const td = cellInfo.td;
+          const cs = parseInt(td.getAttribute('colspan') || '1', 10);
           const txt = td.textContent.replace(/\s+/g, ' ').trim();
 
-          // Check Day cell
-          const dayMatch = DAYS.find(d => txt.substring(0, 3).toLowerCase() === d.substring(0, 3).toLowerCase());
-          if (dayMatch && (colTracker === 0 || isFirstDay)) {
-            currentDay = dayMatch;
+          // Skip empty cells
+          if (!txt || txt === '—' || txt === '-') { c += cs; continue; }
+
+          // Check if this cell contains a course code
+          const courseCodeMatch = td.innerHTML.match(/([A-Z]{2,4}\s*\d{3})/i) || txt.match(/([A-Z]{2,4}\s*\d{3})/i);
+          if (!courseCodeMatch) { c += cs; continue; }
+
+          const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
+
+          // Split cell content into distinct lines to parse line-by-line
+          const rawHtml = td.innerHTML || '';
+          const cellLines = rawHtml
+            .split(/<br\s*\/?>|\r?\n/)
+            .map(l => l.replace(/<[^>]+>/g, '').trim())
+            .filter(Boolean);
+
+          let courseName = '';
+          const line0 = cellLines[0] || txt;
+
+          // Line 0: Course Code - Course Name
+          const nameMatch = line0.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍(]+)/i);
+          if (nameMatch) {
+            courseName = nameMatch[2]
+              .replace(/\b(Lecture|Lab|Tut|Tutorial)\b/gi, '')
+              .replace(/Class\s*No:.*/gi, '')
+              .trim();
           }
 
-          // Check Level cell
-          const levelMatch = txt.match(/Level\s*(\d+)/i);
-          if (levelMatch && (colTracker <= 1 || isFirstLevel)) {
-            currentLevel = levelMatch[1];
-            if (/Biotech/i.test(txt)) currentProgram = 'biotech';
-            else if (/Chemistry/i.test(txt)) currentProgram = 'chemistry';
-            else if (/Renewable/i.test(txt)) currentProgram = 'renewable';
-            else if (/Engineering/i.test(txt)) currentProgram = 'engineering';
-            else currentProgram = 'general';
+          // Calculate start & end minutes from true grid column position
+          let startMin = colToMinutes[c];
+          let endColIdx = c + cs - 1;
+          let endMin = colToMinutes[endColIdx];
+
+          // If the end column is the last time slot, use end = start of that slot + 15
+          // Otherwise endMin is the start of the last spanned column
+          if (startMin === null || startMin === undefined) {
+            startMin = 540 + Math.max(0, c - 2) * 15;
+          }
+          if (endMin === null || endMin === undefined) {
+            endMin = startMin + cs * 15;
           }
 
-          // Check Course Entry cell
-          const courseCodeMatch = td.innerHTML.match(/([A-Z]{2,4}\s*\d{3})/i) || td.textContent.match(/([A-Z]{2,4}\s*\d{3})/i);
-          if (courseCodeMatch && !td.textContent.includes('DAY') && !td.textContent.includes('LEVEL') && colTracker >= 2) {
-            const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
+          const fullCellTxt = txt;
 
-            // Split cell content into distinct lines to parse line-by-line
-            const rawHtml = td.innerHTML || '';
-            const cellLines = rawHtml
-              .split(/<br\s*\/?>|\r?\n/)
-              .map(l => l.replace(/<[^>]+>/g, '').trim())
-              .filter(Boolean);
+          let entryType = 'lecture';
+          let component = 'L1S';
 
-            let courseName = '';
-            let line0 = cellLines[0] || td.textContent;
-
-            // Line 0: Course Code - Course Name
-            const nameMatch = line0.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍(]+)/i);
-            if (nameMatch) {
-              courseName = nameMatch[2]
-                .replace(/\b(Lecture|Lab|Tut|Tutorial)\b/gi, '')
-                .replace(/Class\s*No:.*/gi, '')
-                .trim();
-            }
-
-            // Calculate start & end minutes from column position
-            let startMin = headerTimes[colTracker];
-            if (startMin === null || startMin === undefined) {
-              startMin = 540 + Math.max(0, colTracker - 2) * 15;
-            }
-
-            let lastSlotMin = headerTimes[colTracker + colSpan - 1];
-            let endMin = (lastSlotMin !== null && lastSlotMin !== undefined)
-              ? lastSlotMin + 15
-              : startMin + colSpan * 15;
-
-            const fullCellTxt = td.textContent.replace(/\s+/g, ' ').trim();
-
-            let entryType = 'lecture';
-            let component = 'L1S';
-
-            if (/Lecture/i.test(fullCellTxt) || /Lec\b/i.test(fullCellTxt)) {
-              entryType = 'lecture';
-              const grp = fullCellTxt.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i);
-              const gNum = grp ? (grp[1] || grp[2]) : '1';
-              component = `L${gNum}S`;
-            } else if (/Lab\b/i.test(fullCellTxt)) {
-              entryType = 'lab';
-              const grp = fullCellTxt.match(/Lab-?\s*([A-Za-z0-9()]+)/i);
-              const gStr = grp ? grp[1] : '1A';
-              component = `Lab-${gStr}`;
-            } else if (/Tut(?:orial)?\b/i.test(fullCellTxt)) {
-              entryType = 'tutorial';
-              const grp = fullCellTxt.match(/Tut-?\s*([A-Za-z0-9()]+)/i);
-              const gStr = grp ? grp[1] : '1A';
-              component = `Tut-${gStr}`;
-            }
-
-            let classNo = '';
-            const classMatch = fullCellTxt.match(/Class No:\s*(\d+)/i);
-            if (classMatch) classNo = classMatch[1];
-
-            let instructor = '';
-            const instLine = cellLines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د.') || l.startsWith('م.')) || '';
-            if (instLine) {
-              instructor = instLine.replace('👤', '').trim();
-            }
-
-            let facilityId = '';
-            let capacity = '';
-
-            const pinMatch = fullCellTxt.match(/📍\s*([A-Z0-9/._-]+)\s*(?:\((\d+)\))?/i);
-            if (pinMatch) {
-              facilityId = pinMatch[1].trim();
-              if (pinMatch[2]) capacity = pinMatch[2].trim();
-            } else {
-              const facLine = cellLines.find(l => l.includes('📍') || l.startsWith('B') || l.includes('-')) || '';
-              const facMatch = (facLine || fullCellTxt).match(/(?:📍|Room|Building)?\s*([A-Z0-9]{1,4}[-/A-Z0-9._]+)\s*(?:\((\d+)\))?/i);
-              if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
-                facilityId = facMatch[1].trim();
-                if (facMatch[2]) capacity = facMatch[2].trim();
-              }
-            }
-
-            let association = '1';
-            const assocMatch = component.match(/\d+/);
-            if (assocMatch) association = assocMatch[0];
-
-            importedEntries.push({
-              id: generateId(),
-              day: currentDay,
-              level: currentLevel,
-              program: currentProgram,
-              courseCode: courseCode,
-              courseName: courseName,
-              component: component,
-              entryType: entryType,
-              classNo: classNo,
-              facilityId: facilityId,
-              capacity: capacity,
-              instructor: instructor,
-              startMinutes: startMin,
-              endMinutes: endMin,
-              association: association
-            });
+          if (/Lecture/i.test(fullCellTxt) || /Lec\b/i.test(fullCellTxt)) {
+            entryType = 'lecture';
+            const grp = fullCellTxt.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i);
+            const gNum = grp ? (grp[1] || grp[2]) : '1';
+            component = `L${gNum}S`;
+          } else if (/Lab\b/i.test(fullCellTxt)) {
+            entryType = 'lab';
+            const grp = fullCellTxt.match(/Lab-?\s*([A-Za-z0-9()]+)/i);
+            const gStr = grp ? grp[1] : '1A';
+            component = `Lab-${gStr}`;
+          } else if (/Tut(?:orial)?\b/i.test(fullCellTxt)) {
+            entryType = 'tutorial';
+            const grp = fullCellTxt.match(/Tut-?\s*([A-Za-z0-9()]+)/i);
+            const gStr = grp ? grp[1] : '1A';
+            component = `Tut-${gStr}`;
           }
 
-          colTracker += colSpan;
-        });
-      });
+          let classNo = '';
+          const classMatch = fullCellTxt.match(/Class No:\s*(\d+)/i);
+          if (classMatch) classNo = classMatch[1];
+
+          let instructor = '';
+          const instLine = cellLines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د.') || l.startsWith('م.')) || '';
+          if (instLine) {
+            instructor = instLine.replace('👤', '').trim();
+          }
+
+          let facilityId = '';
+          let capacity = '';
+
+          const pinMatch = fullCellTxt.match(/📍\s*([A-Z0-9/._-]+)\s*(?:\((\d+)\))?/i);
+          if (pinMatch) {
+            facilityId = pinMatch[1].trim();
+            if (pinMatch[2]) capacity = pinMatch[2].trim();
+          } else {
+            const facLine = cellLines.find(l => l.includes('📍') || l.startsWith('B') || l.includes('-')) || '';
+            const facMatch = (facLine || fullCellTxt).match(/(?:📍|Room|Building)?\s*([A-Z0-9]{1,4}[-/A-Z0-9._]+)\s*(?:\((\d+)\))?/i);
+            if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
+              facilityId = facMatch[1].trim();
+              if (facMatch[2]) capacity = facMatch[2].trim();
+            }
+          }
+
+          let association = '1';
+          const assocMatch = component.match(/\d+/);
+          if (assocMatch) association = assocMatch[0];
+
+          importedEntries.push({
+            id: generateId(),
+            day: currentDay,
+            level: currentLevel,
+            program: currentProgram,
+            courseCode: courseCode,
+            courseName: courseName,
+            component: component,
+            entryType: entryType,
+            classNo: classNo,
+            facilityId: facilityId,
+            capacity: capacity,
+            instructor: instructor,
+            startMinutes: startMin,
+            endMinutes: endMin,
+            association: association
+          });
+
+          c += cs;
+        }
+      }
 
       if (importedEntries.length === 0) {
         showToast('No valid schedule entries detected in the uploaded file.', 'warning');
