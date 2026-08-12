@@ -1217,8 +1217,7 @@ function renderGrid() {
 
               td.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (!requireAuth('view or modify schedule entries')) return;
-                showEntryPopup(entry, td);
+                editEntry(entry.id);
               });
 
               tr.appendChild(td);
@@ -1862,16 +1861,21 @@ function parseVisualHtmlTable(htmlContent) {
         let instructor = '';
         let facilityId = '';
         let capacity = '';
-        if (line4) {
-          const facClean = line4.replace('📍', '').trim();
-          const capMatch = facClean.match(/\((\d+)\)/);
-          if (capMatch) {
-            capacity = capMatch[1];
-            facilityId = facClean.replace(capMatch[0], '').trim();
-          } else {
-            facilityId = facClean;
+
+        lines.forEach(line => {
+          if (line.includes('👤') || line.startsWith('د.') || line.startsWith('أ.د') || line.toLowerCase().includes('dr.') || line.includes('م.')) {
+            instructor = line.replace('👤', '').trim();
+          } else if (line.includes('📍') || line.match(/[A-Z0-9]+-[A-Z0-9]+/) || line.match(/B\d+/i)) {
+            const facClean = line.replace('📍', '').trim();
+            const capMatch = facClean.match(/\((\d+)\)/);
+            if (capMatch) {
+              capacity = capMatch[1];
+              facilityId = facClean.replace(capMatch[0], '').trim();
+            } else {
+              facilityId = facClean;
+            }
           }
-        }
+        });
 
         entries.push({
           id: generateId(),
