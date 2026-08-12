@@ -766,21 +766,13 @@ body {
   border-bottom: 1.5px solid #000000 !important;
 }
 
-.sched-row.level-sep td {
-  border-top: 3px solid #000000 !important;
+.sched-row.level-last td {
+  border-bottom: 3.5px solid #000000 !important;
 }
 
 .sched-row.day-last td,
 .sched-day {
-  border-bottom: 3px solid #000000 !important;
-}
-
-/* Day separator row */
-.sched-day-sep td {
-  height: 6px;
-  background: rgba(0, 0, 0, 0.05);
-  border: none;
-  border-bottom: 3px solid #000000 !important;
+  border-bottom: 3.5px solid #dc2626 !important;
 }
 
 /* ── Empty state ──────────────────────────────────────────────────────── */
