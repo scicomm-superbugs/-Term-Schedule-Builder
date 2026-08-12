@@ -1226,15 +1226,15 @@ function renderGrid() {
                   ${conflictBadgeHtml}
                   <div class="entry-course">${courseHtml}</div>
                   <div class="entry-type-label">${typeLabelHtml}</div>
-                  <div class="entry-instructor">${entry.instructor || '—'}</div>
-                  <div class="entry-facility">${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</div>
+                  <div class="entry-instructor">👤 ${entry.instructor || '—'}</div>
+                  <div class="entry-facility">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</div>
                 `;
               } else if (widthPx > 120) {
                 innerContent = `
                   ${conflictBadgeHtml}
                   <div class="entry-course">${courseHtml}</div>
                   <div class="entry-type-label">${typeLabelHtml}</div>
-                  <div class="entry-instructor">${entry.instructor || '—'}</div>
+                  <div class="entry-instructor">👤 ${entry.instructor || '—'}</div>
                 `;
               } else {
                 innerContent = `
@@ -1975,20 +1975,20 @@ function exportVisualExcel() {
   const slots = generateTimeSlots(timeStart, timeEnd);
 
   let tableHtml = `
-  <table border="1" style="border-collapse:collapse; font-family: Arial, sans-serif; font-size: 11px; width:100%; border: 1px solid #000000;">
+  <table border="1" style="border-collapse:collapse; font-family: Arial, sans-serif; font-size: 11px; width:100%;">
     <thead>
       <tr style="background-color: #d9d9d9; height: 34px;">
-        <th style="width:70px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #000000; color:#000000;">DAY</th>
-        <th style="width:110px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #000000; color:#000000;">LEVEL</th>
+        <th style="width:70px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #94a3b8; color:#000000;">DAY</th>
+        <th style="width:110px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #94a3b8; color:#000000;">LEVEL</th>
   `;
 
   // Time slot headers
   slots.forEach(slot => {
-    tableHtml += `<th style="width:52px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #000000; color:#000000;">${formatSlotLabel(slot.start)}</th>`;
+    tableHtml += `<th style="width:52px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(slot.start)}</th>`;
   });
 
   // 4:00 PM header cell
-  tableHtml += `<th style="width:45px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #000000; color:#000000;">${formatSlotLabel(timeEnd)}</th>`;
+  tableHtml += `<th style="width:45px; background-color:#d9d9d9; font-weight:bold; text-align:center; border:1px solid #cbd5e1; color:#000000;">${formatSlotLabel(timeEnd)}</th>`;
 
   tableHtml += `</tr></thead><tbody>`;
 
@@ -2007,14 +2007,14 @@ function exportVisualExcel() {
       const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
       tableHtml += `
         <tr style="height: 50px;">
-          <td style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border:1px solid #000000; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle;">${day.substring(0, 3)}</td>
-          <td style="width:110px; font-weight:bold; text-align:center; vertical-align:middle; background-color:#ffffff; border:1px solid #000000; color:#94a3b8;">—</td>
+          <td style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626;">${day.substring(0, 3)}</td>
+          <td style="width:110px; font-weight:bold; text-align:center; vertical-align:middle; background-color:#ffffff; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626; color:#94a3b8;">—</td>
       `;
       slots.forEach(() => {
-        tableHtml += `<td style="background-color:#ffffff; border:1px solid #000000;"></td>`;
+        tableHtml += `<td style="background-color:#ffffff; border-right:1px solid #e2e8f0; border-bottom:3.5px solid #dc2626;"></td>`;
       });
       // 4:00 PM closing cell
-      tableHtml += `<td style="background-color:#ffffff; border:1px solid #000000;"></td></tr>`;
+      tableHtml += `<td style="background-color:#ffffff; border-right:none; border-bottom:3.5px solid #dc2626;"></td></tr>`;
     } else {
       let isFirstDayRow = true;
 
@@ -2022,11 +2022,15 @@ function exportVisualExcel() {
         const isLastGroupInDay = gIdx === groupSubRowsMap.length - 1;
 
         subRows.forEach((slotMap, sIdx) => {
+          const isLastSubRowInGroup = sIdx === subRows.length - 1;
+          const isDayLast = isLastGroupInDay && isLastSubRowInGroup;
+          const bottomBorderStyle = isDayLast ? 'border-bottom: 3.5px solid #dc2626;' : 'border-bottom: 1.5px solid #cbd5e1;';
+          
           tableHtml += `<tr style="height: 60px;">`;
 
           if (isFirstDayRow) {
             const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
-            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border:1px solid #000000; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle;">${day.substring(0, 3)}</td>`;
+            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-right:2px solid #cbd5e1; border-bottom:3.5px solid #dc2626;">${day.substring(0, 3)}</td>`;
             isFirstDayRow = false;
           }
 
@@ -2037,7 +2041,7 @@ function exportVisualExcel() {
               ? `<span style="font-weight:bold; color:${prog.textColor}; mso-data-placement:same-cell;">${levelLabel}</span><br/><span style="color:${prog.color}; font-size:9px; font-weight:bold; mso-data-placement:same-cell;">${prog.name}</span>`
               : `<span style="font-weight:bold; color:#334155; mso-data-placement:same-cell;">${levelLabel}</span>`;
 
-            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border:1px solid #000000; border-left:3px solid ${prog.color}; mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
+            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border-left:3px solid ${prog.color}; border-right:2px solid #cbd5e1; ${isLastGroupInDay ? 'border-bottom:3.5px solid #dc2626;' : 'border-bottom:1.5px solid #cbd5e1;'} mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
           }
 
           // Slot mapping
@@ -2072,15 +2076,15 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border:1px solid #000000; border-left: 4px solid ${cellBorder}; padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${formattedGroup}${classNoStr}</span>
                     </span><br/>
-                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">${entry.instructor || '—'}</span><br/>
-                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
+                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
+                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
                   </td>
                 `;
               } else {
@@ -2092,21 +2096,21 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border:1px solid #000000; border-left: 4px solid ${cellBorder}; padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-left: 4px solid ${cellBorder}; border-top:1px solid #cbd5e1; border-right:1px solid #cbd5e1; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${rawType}</span><span style="color:#ff0000;">${groupStr}${classNoStr}</span>
                     </span><br/>
-                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">${entry.instructor || '—'}</span><br/>
-                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
+                    <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
+                    <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
                   </td>
                 `;
               }
               s += span;
             } else {
-              tableHtml += `<td style="background-color:#ffffff; border:1px solid #000000;"></td>`;
+              tableHtml += `<td style="background-color:#ffffff; border-right:1px solid #e2e8f0; ${bottomBorderStyle}"></td>`;
               s++;
             }
           }
