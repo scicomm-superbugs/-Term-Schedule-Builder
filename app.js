@@ -737,22 +737,93 @@ function generateId() {
 }
 
 // ─── Component Parser ────────────────────────────────────────────────────────
-function parseComponent(component) {
-  if (!component) return { type: 'lecture', group: '', label: 'Unknown', code: '' };
-  const str = component.trim().toUpperCase();
-  const match = str.match(/^([LB])(\d+)S$/);
-  if (!match) return { type: 'lecture', group: '', label: component, code: component };
-
-  const [, typeChar, numStr] = match;
-  const num = parseInt(numStr);
-
-  if (typeChar === 'L') {
-    return { type: 'lecture', group: num, label: `Lecture Group ${num}`, code: str };
-  } else {
-    const groupNum = Math.ceil(num / 2);
-    const subGroup = num % 2 === 1 ? 'A' : 'B';
-    return { type: 'lab', group: `${groupNum}${subGroup}`, label: `Lab/Tutorial Group ${groupNum}${subGroup}`, code: str };
+function parseComponent(component, association) {
+  if (!component) {
+    const assocGroup = association ? (association.toString().startsWith('Group') ? association : `Group ${association}`) : '';
+    return { type: 'lecture', group: association || '', label: assocGroup ? `Lecture ${assocGroup}` : 'Lecture', code: '' };
   }
+
+  const rawStr = component.trim();
+  const str = rawStr.toUpperCase();
+
+  // 1. Standard L#S (Lecture) or B#S (Lab) codes
+  const matchCode = str.match(/^([LB])(\d+)S$/);
+  if (matchCode) {
+    const [, typeChar, numStr] = matchCode;
+    const num = parseInt(numStr);
+
+    if (typeChar === 'L') {
+      return { type: 'lecture', group: num, label: `Lecture Group ${num}`, code: str };
+    } else {
+      const groupNum = Math.ceil(num / 2);
+      const subGroup = num % 2 === 1 ? 'A' : 'B';
+      return { type: 'lab', group: `${groupNum}${subGroup}`, label: `Lab/Tutorial Group ${groupNum}${subGroup}`, code: str };
+    }
+  }
+
+  // 2. Generic pattern matching for Lecture / Lab / Tut / Tutorial
+  let entryType = 'lecture';
+  if (/Lab/i.test(rawStr)) entryType = 'lab';
+  else if (/Tut/i.test(rawStr)) entryType = 'tutorial';
+
+  const groupMatch = rawStr.match(/\(Group\s*([^)]+)\)|Group\s*([\w\d]+)/i) 
+    || rawStr.match(/(?:Lec|Lecture|Lab|Tut|Tutorial|L|B)\s*[-_:]?\s*([\w\d]+)/i)
+    || rawStr.match(/^(\d+[\w]*)$/);
+
+  let groupVal = groupMatch ? (groupMatch[1] || groupMatch[2]) : '';
+  if (!groupVal && association) {
+    groupVal = association.toString().replace(/^Group\s*/i, '');
+  }
+
+  if (entryType === 'lecture') {
+    const label = groupVal ? `Lecture (Group ${groupVal})` : 'Lecture';
+    return { type: 'lecture', group: groupVal, label, code: rawStr };
+  } else if (entryType === 'lab') {
+    const label = groupVal ? `Lab-${groupVal}` : 'Lab';
+    return { type: 'lab', group: groupVal, label, code: rawStr };
+  } else {
+    const label = groupVal ? `Tut-${groupVal}` : 'Tutorial';
+    return { type: 'tutorial', group: groupVal, label, code: rawStr };
+  }
+}
+
+function getLectureGroupDisplay(entry) {
+  const parsed = parseComponent(entry.component, entry.association);
+  const groupMatch = parsed.label.match(/\(Group\s*[^)]+\)|Group\s*[\w\d]+/i)
+    || (entry.component ? entry.component.match(/\(Group\s*[^)]+\)|Group\s*[\w\d]+/i) : null)
+    || (entry.association ? `Group ${entry.association}` : null)
+    || (parsed.group ? `Group ${parsed.group}` : null);
+
+  const groupStr = groupMatch ? (typeof groupMatch === 'string' ? groupMatch : groupMatch[0]) : '';
+  const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
+  const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+  return `${formattedGroup}${classNoStr}`;
+}
+
+function getLabGroupDisplay(entry) {
+  const parsed = parseComponent(entry.component, entry.association);
+  let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Lab\s*/i, '');
+  if (!groupStr || groupStr.toLowerCase() === 'lab') {
+    groupStr = (entry.component || '').replace(/^Lab[-_\s]*/i, '') || (entry.association ? entry.association : '');
+  }
+  if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
+    groupStr = '-' + groupStr;
+  }
+  const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+  return `${groupStr}${classNoStr}`;
+}
+
+function getTutGroupDisplay(entry) {
+  const parsed = parseComponent(entry.component, entry.association);
+  let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Tut(orial)?\s*/i, '');
+  if (!groupStr || groupStr.toLowerCase() === 'tut' || groupStr.toLowerCase() === 'tutorial') {
+    groupStr = (entry.component || '').replace(/^Tut(orial)?[-_\s]*/i, '') || (entry.association ? entry.association : '');
+  }
+  if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
+    groupStr = '-' + groupStr;
+  }
+  const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
+  return `${groupStr}${classNoStr}`;
 }
 
 function buildComponentCode(type, lectureGroup, parentGroup, subGroup) {
@@ -1200,25 +1271,11 @@ function renderGrid() {
 
               let typeLabelHtml = '';
               if (entryType === 'lecture') {
-                const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
-                const groupStr = groupMatch ? groupMatch[0] : '';
-                const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
-                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-                typeLabelHtml = `<span class="type-prefix">Lecture </span><span class="type-group">${formattedGroup}${classNoStr}</span>`;
+                typeLabelHtml = `<span class="type-prefix">Lecture </span><span class="type-group">${getLectureGroupDisplay(entry)}</span>`;
               } else if (entryType === 'lab') {
-                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Lab\s*/i, '');
-                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
-                  groupStr = '-' + groupStr;
-                }
-                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-                typeLabelHtml = `<span class="type-prefix">Lab</span><span class="type-group">${groupStr}${classNoStr}</span>`;
+                typeLabelHtml = `<span class="type-prefix">Lab</span><span class="type-group">${getLabGroupDisplay(entry)}</span>`;
               } else {
-                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^Tut(orial)?\s*/i, '');
-                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
-                  groupStr = '-' + groupStr;
-                }
-                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-                typeLabelHtml = `<span class="type-prefix">Tut</span><span class="type-group">${groupStr}${classNoStr}</span>`;
+                typeLabelHtml = `<span class="type-prefix">Tut</span><span class="type-group">${getTutGroupDisplay(entry)}</span>`;
               }
 
               const widthPx = span * 52;
@@ -1852,11 +1909,7 @@ function exportVisualExcel() {
               const cellBorder = entry.customColor ? adjustColorBrightness(entry.customColor, -45) : defaultBorder;
 
               if (entryType === 'lecture') {
-                const groupMatch = parsed.label.match(/\(Group\s*\d+\)|Group\s*\d+/i);
-                const groupStr = groupMatch ? groupMatch[0] : '';
-                const formattedGroup = groupStr ? (groupStr.startsWith('(') ? groupStr : `(${groupStr})`) : '';
-                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-
+                const groupDisplay = getLectureGroupDisplay(entry);
                 const dataAttrs = ` data-component="${entry.component || ''}" data-entry-type="${entryType}" data-class-no="${entry.classNo || ''}" data-instructor="${(entry.instructor || '').replace(/"/g, '&quot;')}" data-facility-id="${entry.facilityId || ''}" data-capacity="${entry.capacity || ''}" data-course-name="${(entry.courseName || '').replace(/"/g, '&quot;')}" data-course-code="${entry.courseCode || ''}" data-association="${entry.association || '1'}"`;
 
                 tableHtml += `
@@ -1865,7 +1918,7 @@ function exportVisualExcel() {
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${formattedGroup}${classNoStr}</span>
+                      <span style="color:#0000ff;">Lecture </span><span style="color:#ff0000;">${groupDisplay}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
                     <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
@@ -1873,12 +1926,7 @@ function exportVisualExcel() {
                 `;
               } else {
                 let rawType = entryType === 'tutorial' ? 'Tut' : 'Lab';
-                let groupStr = parsed.label.replace(/^Lab\/Tutorial\s*/i, '').replace(/^(Lab|Tut(orial)?)\s*/i, '');
-                if (groupStr && !groupStr.startsWith('-') && !groupStr.startsWith('(')) {
-                  groupStr = '-' + groupStr;
-                }
-                const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
-
+                const groupDisplay = entryType === 'tutorial' ? getTutGroupDisplay(entry) : getLabGroupDisplay(entry);
                 const dataAttrs = ` data-component="${entry.component || ''}" data-entry-type="${entryType}" data-class-no="${entry.classNo || ''}" data-instructor="${(entry.instructor || '').replace(/"/g, '&quot;')}" data-facility-id="${entry.facilityId || ''}" data-capacity="${entry.capacity || ''}" data-course-name="${(entry.courseName || '').replace(/"/g, '&quot;')}" data-course-code="${entry.courseCode || ''}" data-association="${entry.association || '1'}"`;
 
                 tableHtml += `
@@ -1887,7 +1935,7 @@ function exportVisualExcel() {
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; display:block; mso-data-placement:same-cell;">
-                      <span style="color:#0000ff;">${rawType}</span><span style="color:#ff0000;">${groupStr}${classNoStr}</span>
+                      <span style="color:#0000ff;">${rawType}</span><span style="color:#ff0000;">${groupDisplay}</span>
                     </span><br/>
                     <span style="font-size:10px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">👤 ${entry.instructor || '—'}</span><br/>
                     <span style="font-size:9px; font-weight:bold; color:#000000; display:block; mso-data-placement:same-cell;">📍 ${entry.facilityId || '—'}${entry.capacity ? ` (${entry.capacity})` : ''}</span>
