@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="style.css?v=18.0" />
+  <link rel="stylesheet" href="style.css?v=17.0" />
 </head>
 <body>
   <div class="app">
@@ -39,9 +39,6 @@
         </button>
         <button class="btn btn-success" id="btn-export-visual" title="Export Visual Schedule Grid as Excel Sheet with colors & formatting">
           <span>📊</span> Export Visual Excel
-        </button>
-        <button class="btn btn-success" id="btn-import-visual" title="Import Visual Excel Schedule Grid file to deploy entries directly">
-          <span>📥</span> Import Visual Excel
         </button>
         <button class="btn" id="btn-activity-log" title="View Users Activity & Change Log">
           <span>📋</span> Activity Log
@@ -350,39 +347,6 @@
         <button class="btn btn-success hidden" id="btn-confirm-import">
           <span>✅</span> Import All
         </button>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════════════════
-       MODAL: Import Visual Excel
-       ═══════════════════════════════════════════════════════════════════ -->
-  <div id="modal-import-visual" class="modal-overlay">
-    <div class="modal" style="max-width: 650px;">
-      <div class="modal-header">
-        <h2>📥 Import Visual Excel Schedule</h2>
-        <button class="modal-close" id="btn-close-import-visual">×</button>
-      </div>
-
-      <div class="modal-body">
-        <div class="dropzone" id="dropzone-visual">
-          <div class="dropzone-icon">📊</div>
-          <p class="dropzone-title">Click or Drag Visual Excel File Here</p>
-          <p class="dropzone-sub">Supports .xls, .xlsx, .htm, and .html files exported from "Export Visual Excel" or created in Excel</p>
-          <input type="file" id="file-input-visual" accept=".xls,.xlsx,.htm,.html,.csv" />
-        </div>
-
-        <p style="font-size: 0.76rem; color: var(--text-muted); text-align: center; margin-top: 8px;">
-          Automatically extracts Days, Level/Program rows, Time Slots, Courses, Instructors, Facilities, and Components directly into your live schedule.
-        </p>
-
-        <!-- Import Visual Preview -->
-        <div id="import-visual-preview" class="import-preview hidden"></div>
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn" id="btn-cancel-import-visual">Cancel</button>
-        <button class="btn btn-success hidden" id="btn-confirm-import-visual">
-          <span>🚀</span> Deploy to Schedule
-        </button>
       </div>
     </div>
   </div>
@@ -549,9 +513,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-  <!-- SheetJS for Excel (.xlsx, .xls) Parsing -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <script src="app.js?v=18.0"></script>
+  <script src="app.js?v=17.0"></script>
 </body>
 </html>
