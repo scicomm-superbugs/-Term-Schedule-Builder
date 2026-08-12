@@ -143,7 +143,7 @@ function setupRealtimeSyncListeners() {
   db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
     const val = snapshot.val();
     isRemoteSyncUpdate = true;
-    scheduleData = (val && Array.isArray(val)) ? val : [];
+    scheduleData = (val && Array.isArray(val)) ? val.map(normalizeComponentAndAssociation) : [];
     localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
     renderGrid();
     updateStats();
@@ -734,6 +734,81 @@ let activePopup = null;
 // ─── Utility ──────────────────────────────────────────────────────────────────
 function generateId() {
   return 'e_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+// ─── Component & Association Standardization (Official SIS Rules) ───────────
+function normalizeComponentAndAssociation(entry) {
+  if (!entry) return entry;
+
+  let entryType = entry.entryType || 'lecture';
+  let rawComp = (entry.component || '').trim();
+  let rawAssoc = (entry.association || '').toString().trim();
+
+  // Infer entryType from component if not explicit
+  if (/Lab/i.test(rawComp)) entryType = 'lab';
+  else if (/Tut/i.test(rawComp)) entryType = 'tutorial';
+
+  if (entryType === 'lecture') {
+    // Lecture components MUST be L1S, L2S, L3S, L4S...
+    // Association MUST be 1, 2, 3, 4...
+    let groupNum = 1;
+    const gMatch = rawComp.match(/L(\d+)S/i)
+      || rawComp.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i)
+      || rawComp.match(/(?:Lec|Lecture|L)\s*[-_:]?\s*(\d+)/i)
+      || rawComp.match(/^(\d+)$/);
+
+    if (gMatch) {
+      groupNum = parseInt(gMatch[1] || gMatch[2], 10) || 1;
+    } else if (rawAssoc && /^\d+$/.test(rawAssoc)) {
+      groupNum = parseInt(rawAssoc, 10) || 1;
+    }
+
+    entry.component = `L${groupNum}S`;
+    entry.association = String(groupNum);
+    entry.entryType = 'lecture';
+  } else {
+    // Lab/Tutorial components MUST be B1S, B2S, B3S, B4S...
+    // B1S = Group 1A -> Parent 1, Sub A, Assoc 1
+    // B2S = Group 1B -> Parent 1, Sub B, Assoc 1
+    // B3S = Group 2A -> Parent 2, Sub A, Assoc 2
+    // B4S = Group 2B -> Parent 2, Sub B, Assoc 2
+    // B5S = Group 3A -> Parent 3, Sub A, Assoc 3
+    // B6S = Group 3B -> Parent 3, Sub B, Assoc 3
+    // B7S = Group 4A -> Parent 4, Sub A, Assoc 4
+    // B8S = Group 4B -> Parent 4, Sub B, Assoc 4
+    // Association MUST be 1, 2, 3, 4 (WITHOUT A or B!)
+
+    let bIndex = 1;
+    let parentGroup = 1;
+
+    const bMatch = rawComp.match(/^B(\d+)S$/i);
+    if (bMatch) {
+      bIndex = parseInt(bMatch[1], 10);
+      parentGroup = Math.ceil(bIndex / 2);
+    } else {
+      const groupMatch = rawComp.match(/Group\s*(\d+)\s*([AB])?/i)
+        || rawComp.match(/(?:Lab|Tut|Tutorial|B)\s*[-_:]?\s*(\d+)\s*([AB])?/i)
+        || rawComp.match(/^(\d+)\s*([AB])?$/i);
+
+      if (groupMatch) {
+        parentGroup = parseInt(groupMatch[1], 10) || 1;
+        const subLetter = (groupMatch[2] || 'A').toUpperCase();
+        bIndex = (parentGroup - 1) * 2 + (subLetter === 'A' ? 1 : 2);
+      } else if (rawAssoc) {
+        const assocNumMatch = rawAssoc.match(/(\d+)\s*([AB])?/i);
+        if (assocNumMatch) {
+          parentGroup = parseInt(assocNumMatch[1], 10) || 1;
+          const subLetter = (assocNumMatch[2] || 'A').toUpperCase();
+          bIndex = (parentGroup - 1) * 2 + (subLetter === 'A' ? 1 : 2);
+        }
+      }
+    }
+
+    entry.component = `B${bIndex}S`;
+    entry.association = String(parentGroup);
+  }
+
+  return entry;
 }
 
 // ─── Component Parser ────────────────────────────────────────────────────────
@@ -1696,12 +1771,12 @@ function parseCSV(text) {
       program = 'general';
     }
 
-    entries.push({
+    const rawEntry = {
       id: generateId(),
       level: getValue('level') || '1',
       courseCode: courseCode || 'COURSE',
       courseName: getValue('courseName'),
-      component: component || 'Lec 1',
+      component: component || 'L1S',
       entryType: parsed.type,
       association: getValue('association'),
       classNo: getValue('classNo'),
@@ -1712,7 +1787,9 @@ function parseCSV(text) {
       capacity: getValue('capacity'),
       instructor: getValue('instructor'),
       program
-    });
+    };
+
+    entries.push(normalizeComponentAndAssociation(rawEntry));
   }
   return entries;
 }
@@ -2172,7 +2249,7 @@ function importVisualExcelFile(file) {
             if (startMin === null || startMin === undefined) startMin = 540 + Math.max(0, c - 2) * 15;
             if (endMin === null || endMin === undefined) endMin = startMin + cs * 15;
 
-            importedEntries.push({
+            const rawEntry = {
               id: generateId(),
               day: currentDay,
               level: currentLevel,
@@ -2188,7 +2265,8 @@ function importVisualExcelFile(file) {
               startMinutes: startMin,
               endMinutes: endMin,
               association: td.getAttribute('data-association') || '1'
-            });
+            };
+            importedEntries.push(normalizeComponentAndAssociation(rawEntry));
 
             c += cs;
             continue;
@@ -2280,7 +2358,7 @@ function importVisualExcelFile(file) {
           const assocMatch = component.match(/\d+/);
           if (assocMatch) association = assocMatch[0];
 
-          importedEntries.push({
+          const rawEntry = {
             id: generateId(),
             day: currentDay,
             level: currentLevel,
@@ -2296,7 +2374,8 @@ function importVisualExcelFile(file) {
             startMinutes: startMin,
             endMinutes: endMin,
             association: association
-          });
+          };
+          importedEntries.push(normalizeComponentAndAssociation(rawEntry));
 
           c += cs;
         }
@@ -2582,7 +2661,7 @@ function saveEntry() {
   const useCustomColor = document.getElementById('field-use-custom-color') ? document.getElementById('field-use-custom-color').checked : false;
   const customColorVal = document.getElementById('field-custom-color') ? document.getElementById('field-custom-color').value : null;
 
-  const entry = {
+  let entry = {
     id: currentEditId || generateId(),
     level, courseCode, courseName, component,
     entryType: selectedType,
@@ -2591,6 +2670,7 @@ function saveEntry() {
     day, capacity, instructor, program,
     customColor: useCustomColor ? customColorVal : undefined
   };
+  entry = normalizeComponentAndAssociation(entry);
 
   const isEdit = !!currentEditId;
   if (currentEditId) {
