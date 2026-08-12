@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="style.css?v=26.0" />
+  <link rel="stylesheet" href="style.css?v=20.0" />
 </head>
 <body>
   <div class="app">
@@ -541,52 +541,6 @@
     </div>
   </div>
 
-  <!-- ═══════ Auth Modal (Sign In / Register) ═══════ -->
-  <div class="modal-overlay" id="modal-auth">
-    <div class="modal modal-card" style="max-width:440px;">
-      <div class="modal-header">
-        <h3 class="modal-title" id="auth-modal-title">🔑 Sign In to Term Schedule</h3>
-        <button class="modal-close" id="btn-close-auth">&times;</button>
-      </div>
-      <div class="modal-body" style="padding:20px;">
-        <button type="button" class="btn" id="btn-google-auth" style="width:100%; display:flex; align-items:center; justify-content:center; gap:10px; padding:11px; font-weight:700; background:#ffffff; color:#1f2937; border:1px solid #cbd5e1; box-shadow:0 2px 4px rgba(0,0,0,0.06); font-size:0.9rem; border-radius:8px; cursor:pointer; margin-bottom:16px; transition:all 0.2s;">
-          <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.1 0-5.74-2.09-6.68-4.91H1.36v3.15C3.36 21.36 7.42 24 12 24z"/><path fill="#FBBC05" d="M5.32 14.29c-.24-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.56H1.36C.49 8.29 0 10.09 0 12s.49 3.71 1.36 5.44l3.96-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.42 0 3.36 2.64 1.36 6.56l3.96 3.15c.94-2.82 3.58-4.96 6.68-4.96z"/></svg>
-          Continue with Google
-        </button>
-
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
-          <div style="flex:1; height:1px; background:#e2e8f0;"></div>
-          <span style="font-size:0.75rem; color:#64748b; font-weight:600; text-transform:uppercase;">or password sign in</span>
-          <div style="flex:1; height:1px; background:#e2e8f0;"></div>
-        </div>
-
-        <form id="auth-form">
-          <div class="form-group">
-            <label class="form-label" id="lbl-auth-user">Username or Email</label>
-            <input type="text" id="auth-username" class="form-control" placeholder="Prof.Dr. Mohammed Salem or Salem123" required />
-          </div>
-          <div class="form-group hidden" id="group-auth-email">
-            <label class="form-label">Email Address</label>
-            <input type="email" id="auth-email" class="form-control" placeholder="Example@aiu.edu.eg" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Password</label>
-            <input type="password" id="auth-password" class="form-control" placeholder="••••••••" required />
-          </div>
-
-          <div style="margin-top:16px;">
-            <button type="submit" class="btn btn-primary" id="btn-auth-submit" style="width:100%; padding:10px; font-weight:700; font-size:0.9rem;">Sign In</button>
-          </div>
-        </form>
-
-        <div style="margin-top:14px; text-align:center; font-size:0.8rem; color:#64748b;">
-          <span id="auth-toggle-prompt">Don't have an account?</span>
-          <a href="#" id="auth-toggle-link" style="color:var(--primary); font-weight:700; text-decoration:none; margin-left:4px;">Sign Up</a>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ═══════ Entry Detail Popup (rendered dynamically) ═══════ -->
   <div id="entry-popup" class="entry-popup hidden"></div>
 
@@ -598,6 +552,6 @@
   <!-- SheetJS for Excel (.xlsx, .xls) Parsing -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <script src="app.js?v=26.0"></script>
+  <script src="app.js?v=20.0"></script>
 </body>
 </html>

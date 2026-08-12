@@ -241,19 +241,33 @@ function getCurrentUser() {
 }
 
 function requireAuth(actionLabel = 'make changes') {
-  // All features are freely accessible to all users by default
+  if (!currentUser) {
+    showToast(`🔐 Authentication required to ${actionLabel}. Please sign in.`, 'error');
+    openAuthModal('signin');
+    return false;
+  }
+  if (!currentUser.approved) {
+    showToast(`⏳ Account Pending Approval. Contact Admin (${SUPER_ADMIN_EMAIL}) to approve your account.`, 'error');
+    return false;
+  }
   return true;
 }
 
 function updateAuthHeaderUI() {
   const container = document.getElementById('auth-header-container');
+  const appEl = document.querySelector('.app');
   const btnCloseAuth = document.getElementById('btn-close-auth');
   const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
   const pendingCount = users.filter(u => !u.approved).length;
 
-  if (btnCloseAuth) btnCloseAuth.style.display = 'block';
-
   if (currentUser) {
+    // UNLOCK PAGE CONTENT & CLOSE AUTH MODAL
+    if (appEl) appEl.classList.remove('page-locked');
+    if (btnCloseAuth) btnCloseAuth.style.display = 'block';
+    const authModal = document.getElementById('modal-auth');
+    if (authModal) authModal.classList.remove('active');
+    document.body.style.overflow = '';
+
     const isAdmin = currentUser.email && currentUser.email.toLowerCase() === SUPER_ADMIN_EMAIL;
     const adminBtn = isAdmin ? `
       <button class="btn btn-xs btn-warning" onclick="openAdminUsersModal()" style="font-size:0.7rem; padding:2px 8px;" title="Manage user accounts & approvals">
@@ -264,7 +278,7 @@ function updateAuthHeaderUI() {
     if (container) {
       container.innerHTML = `
         <div style="display:flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 10px; border-radius:20px; border:1px solid #cbd5e1; font-size:0.75rem;">
-          <span style="font-weight:800; color:#1e293b;">👤 ${currentUser.name || currentUser.username}</span>
+          <span style="font-weight:800; color:#1e293b;">👤 ${currentUser.name}</span>
           <span style="font-size:0.65rem; background:#dbeafe; color:#1e3a8a; padding:1px 6px; border-radius:10px; font-weight:700;">${currentUser.role || 'User'}</span>
           ${adminBtn}
           <button onclick="signOutUser()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:0.75rem; margin-left:2px;" title="Sign Out">✕</button>
@@ -272,20 +286,32 @@ function updateAuthHeaderUI() {
       `;
     }
   } else {
+    // LOCK PAGE CONTENT & FORCE SIGN IN
+    if (appEl) appEl.classList.add('page-locked');
+    if (btnCloseAuth) btnCloseAuth.style.display = 'none';
+
     if (container) {
       container.innerHTML = `
-        <button class="btn btn-primary btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem; font-weight:700; display:flex; align-items:center; gap:4px;">
-          <span>🔑</span> Sign In
+        <button class="btn btn-primary btn-sm" onclick="openAuthModal('signin')" style="font-size:0.75rem; font-weight:700;">
+          <span>🔐</span> Sign In
         </button>
       `;
     }
+    openAuthModal('signin');
   }
 
-  // Restore opacity 1 for all buttons
-  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-import-visual', 'btn-activity-log', 'btn-add', 'btn-clear'];
+  // Update header buttons visual disabled state if signed out
+  const actionButtons = ['btn-import', 'btn-export', 'btn-export-visual', 'btn-activity-log', 'btn-add', 'btn-clear'];
   actionButtons.forEach(id => {
     const btn = document.getElementById(id);
-    if (btn) btn.style.opacity = '1';
+    if (btn) {
+      if (!currentUser) {
+        btn.style.opacity = '0.7';
+        btn.title = '🔐 Sign In required to use this action';
+      } else {
+        btn.style.opacity = '1';
+      }
+    }
   });
 }
 
@@ -297,44 +323,50 @@ function openAuthModal(tab = 'signin') {
 function switchAuthTab(tab) {
   currentAuthTab = tab;
   const isRegister = tab === 'register';
+  const tabSignin = document.getElementById('auth-tab-signin');
+  const tabRegister = document.getElementById('auth-tab-register');
+  if (tabSignin) tabSignin.classList.toggle('active', !isRegister);
+  if (tabRegister) tabRegister.classList.toggle('active', isRegister);
   
-  const groupEmail = document.getElementById('group-auth-email');
-  if (groupEmail) groupEmail.classList.toggle('hidden', !isRegister);
+  const gName = document.getElementById('auth-group-name');
+  const gUser = document.getElementById('auth-group-username');
+  const noticeMsg = document.getElementById('auth-notice-msg');
 
-  const lblUser = document.getElementById('lbl-auth-user');
-  if (lblUser) lblUser.textContent = isRegister ? 'Desired Username' : 'Username or Email';
+  if (gName) gName.classList.toggle('hidden', !isRegister);
+  if (gUser) gUser.classList.toggle('hidden', !isRegister);
+  if (noticeMsg) noticeMsg.style.display = isRegister ? 'block' : 'none';
+
+  const emailLabel = document.getElementById('auth-email-label');
+  if (emailLabel) emailLabel.textContent = isRegister ? 'Email Address' : 'Username or Email';
+
+  const emailInput = document.getElementById('auth-email');
+  if (emailInput) {
+    emailInput.placeholder = isRegister ? 'Example@aiu.edu.eg' : 'Salem123 or Example@aiu.edu.eg';
+  }
 
   const modalTitle = document.getElementById('auth-modal-title');
-  if (modalTitle) modalTitle.textContent = isRegister ? '📝 Create New Account' : '🔑 Sign In to Term Schedule';
-  
+  if (modalTitle) modalTitle.textContent = isRegister ? '📝 Register New Account' : '🔐 Sign In to Schedule Builder';
   const btnSubmit = document.getElementById('btn-auth-submit');
-  if (btnSubmit) btnSubmit.textContent = isRegister ? 'Create Account' : 'Sign In';
-
-  const prompt = document.getElementById('auth-toggle-prompt');
-  if (prompt) prompt.textContent = isRegister ? 'Already have an account?' : "Don't have an account?";
-
-  const link = document.getElementById('auth-toggle-link');
-  if (link) link.textContent = isRegister ? 'Sign In' : 'Sign Up';
+  if (btnSubmit) btnSubmit.textContent = isRegister ? 'Register Account' : 'Sign In';
 }
 
 function handleAuthSubmit(e) {
   e.preventDefault();
-  const inputEmailOrUser = (document.getElementById('auth-username')?.value || '').trim().toLowerCase();
-  const emailVal = (document.getElementById('auth-email')?.value || '').trim().toLowerCase();
-  const password = (document.getElementById('auth-password')?.value || '').trim();
+  const inputEmailOrUser = document.getElementById('auth-email').value.trim().toLowerCase();
+  const password = document.getElementById('auth-password').value.trim();
 
   const users = JSON.parse(localStorage.getItem('term_sched_users') || '[]');
 
   if (currentAuthTab === 'register') {
-    const username = inputEmailOrUser;
-    const name = username;
+    const name = document.getElementById('auth-name').value.trim();
+    const username = document.getElementById('auth-username').value.trim().toLowerCase();
 
-    if (!username || !password) {
+    if (!name || !username || !inputEmailOrUser || !password) {
       showToast('Please fill all required fields', 'error');
       return;
     }
 
-    const existing = users.find(u => (u.username && u.username.toLowerCase() === username) || (u.email && u.email.toLowerCase() === emailVal));
+    const existing = users.find(u => (u.username && u.username.toLowerCase() === username) || (u.email && u.email.toLowerCase() === inputEmailOrUser));
     if (existing) {
       showToast('An account with this username or email already exists', 'error');
       return;
@@ -343,7 +375,7 @@ function handleAuthSubmit(e) {
     const newUser = {
       name,
       username,
-      email: emailVal || `${username}@aiu.edu.eg`,
+      email: inputEmailOrUser,
       role: 'User',
       password,
       approved: false, // REQUIRES ADMIN APPROVAL!
@@ -1099,8 +1131,6 @@ function renderGrid() {
 
           if (isLastGroupInDay && isLastSubRowInGroup) {
             tr.classList.add('day-last');
-          } else if (isLastSubRowInGroup) {
-            tr.classList.add('level-last');
           }
 
           // Day cell (very first subRow of the day)
@@ -1217,7 +1247,8 @@ function renderGrid() {
 
               td.addEventListener('click', (e) => {
                 e.stopPropagation();
-                editEntry(entry.id);
+                if (!requireAuth('view or modify schedule entries')) return;
+                showEntryPopup(entry, td);
               });
 
               tr.appendChild(td);
@@ -1573,35 +1604,6 @@ function capitalizeDay(day) {
   return map[d] || day.charAt(0).toUpperCase() + day.slice(1).toLowerCase();
 }
 
-// ─── Time String Parser (handles 9:00 AM, 9:15, 13:30, and Excel floats) ────
-function parseTimeString(str) {
-  if (!str) return null;
-  const s = String(str).trim();
-
-  // Handle Excel fraction float time (e.g. 0.375 = 9:00 AM)
-  const num = parseFloat(s);
-  if (!isNaN(num) && num > 0 && num < 1) {
-    const totalMinutes = Math.round(num * 24 * 60);
-    return totalMinutes;
-  }
-
-  // Handle 12-hour or 24-hour time strings like "9:00 AM", "09:15", "10:30 AM", "1:15 PM", "13:30"
-  const match = s.match(/(\d{1,2})[:.](\d{2})(?:\s*(AM|PM))?/i);
-  if (match) {
-    let hours = parseInt(match[1], 10);
-    const minutes = parseInt(match[2], 10);
-    const ampm = match[3] ? match[3].toUpperCase() : null;
-
-    if (ampm === 'PM' && hours < 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-    if (!ampm && hours >= 1 && hours <= 4) hours += 12;
-
-    return hours * 60 + minutes;
-  }
-
-  return null;
-}
-
 // ─── Arabic Mojibake Auto-Fix Helper ─────────────────────────────────────────
 function fixMojibake(str) {
   if (!str || typeof str !== 'string') return str;
@@ -1735,8 +1737,6 @@ function parseVisualHtmlTable(htmlContent) {
   const previewDiv = document.getElementById('import-visual-preview');
   const btnConfirm = document.getElementById('btn-confirm-import-visual');
 
-  if (!previewDiv || !btnConfirm) return;
-
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlContent, 'text/html');
   const table = doc.querySelector('table');
@@ -1748,46 +1748,32 @@ function parseVisualHtmlTable(htmlContent) {
     return;
   }
 
-  const rows = Array.from(table.querySelectorAll('tr'));
-  if (!rows.length) {
-    previewDiv.classList.remove('hidden');
-    previewDiv.innerHTML = `<div style="color:var(--danger); font-weight:bold; padding:10px;">❌ Table is empty.</div>`;
-    btnConfirm.classList.add('hidden');
-    return;
-  }
-
-  // 1. Header Time Slot Mapping
+  const ths = table.querySelectorAll('thead th, tr:first-child th, tr:first-child td');
   const headerTimeMap = [];
-  const timeStart = 540; // 9:00 AM
-  let firstRowCells = Array.from(rows[0].querySelectorAll('th, td'));
-
-  if (firstRowCells.length <= 3 && rows.length > 1) {
-    const secondRowCells = Array.from(rows[1].querySelectorAll('th, td'));
-    if (secondRowCells.length > firstRowCells.length) firstRowCells = secondRowCells;
-  }
-
+  const timeStart = 540;
   let colIdx = 0;
-  firstRowCells.forEach(cell => {
+
+  ths.forEach(cell => {
     const text = cell.textContent.trim();
     if (text.toUpperCase() === 'DAY' || text.toUpperCase() === 'LEVEL') return;
 
-    const parsedMin = parseTimeString(text);
-    if (parsedMin !== null && parsedMin >= 480 && parsedMin <= 1100) {
-      headerTimeMap[colIdx] = parsedMin;
+    const timeMin = parseTimeString(text);
+    if (timeMin !== null) {
+      headerTimeMap[colIdx] = timeMin;
     } else {
       headerTimeMap[colIdx] = timeStart + colIdx * 15;
     }
     colIdx++;
   });
 
-  // 2. Parse Rows for Schedule Entries
+  const rows = table.querySelectorAll('tbody tr, tr');
   const entries = [];
   let currentDay = 'Saturday';
   let currentLevel = '1';
   let currentProgram = 'general';
 
   rows.forEach(tr => {
-    const tds = Array.from(tr.querySelectorAll('td, th'));
+    const tds = tr.querySelectorAll('td');
     if (!tds.length) return;
 
     let cellColIdx = 0;
@@ -1796,7 +1782,7 @@ function parseVisualHtmlTable(htmlContent) {
       const text = td.textContent.trim();
       const colSpan = parseInt(td.getAttribute('colspan') || '1', 10);
       const isDayCell = td.classList.contains('sched-day') || text.match(/^(Sat|Sun|Mon|Tue|Wed|Thu|Fri)/i);
-      const isLevelCell = td.classList.contains('sched-level') || text.toLowerCase().includes('level') || text.match(/^L(evel)?\s*\d+/i);
+      const isLevelCell = td.classList.contains('sched-level') || text.toLowerCase().includes('level');
 
       if (isDayCell && cellColIdx === 0) {
         const matchedDay = DAYS.find(d => d.toLowerCase().startsWith(text.substring(0, 3).toLowerCase()));
@@ -1805,7 +1791,7 @@ function parseVisualHtmlTable(htmlContent) {
       }
 
       if (isLevelCell && cellColIdx <= 1) {
-        const lvlMatch = text.match(/Level\s*(\d+)/i) || text.match(/^L\s*(\d+)/i) || text.match(/^(\d+)$/);
+        const lvlMatch = text.match(/Level\s*(\d+)/i);
         if (lvlMatch) currentLevel = lvlMatch[1];
 
         const matchedProg = PROGRAMS.find(p => text.toLowerCase().includes(p.name.toLowerCase()) || text.toLowerCase().includes(p.id.toLowerCase()));
@@ -1814,32 +1800,28 @@ function parseVisualHtmlTable(htmlContent) {
         return;
       }
 
-      const hasCode = text.match(/([A-Z]{2,4}\s*\d{3})/i);
-      const hasType = text.includes('Lecture') || text.includes('Lab') || text.includes('Tut') || text.includes('Lec');
+      const isEntry = text.length > 3 && (
+        text.match(/[A-Z]{2,4}\s*\d{3}/i) ||
+        text.includes('Lecture') || text.includes('Lab') || text.includes('Tut')
+      );
 
-      if (hasCode || (hasType && text.length > 3)) {
+      if (isEntry) {
         const startMin = headerTimeMap[cellColIdx] !== undefined 
           ? headerTimeMap[cellColIdx] 
           : timeStart + cellColIdx * 15;
         const endMin = startMin + colSpan * 15;
 
-        const rawLines = td.innerHTML.split(/<br\s*\/?>|\n|\r/i);
-        const lines = rawLines.map(l => {
-          const tmp = document.createElement('div');
-          tmp.innerHTML = l;
-          return tmp.textContent.replace(/[👤📍]/g, '').trim();
-        }).filter(Boolean);
-
-        const line1 = lines[0] || text;
-        const codeMatch = line1.match(/([A-Z]{2,4}\s*\d{3})/i) || text.match(/([A-Z]{2,4}\s*\d{3})/i);
-        const courseCode = codeMatch ? codeMatch[1].replace(/\s+/, '').toUpperCase() : 'COURSE';
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const line1 = lines[0] || '';
+        const codeMatch = line1.match(/([A-Z]{2,4}\s*\d{3})/i);
+        const courseCode = codeMatch ? codeMatch[1].replace(/\s+/, '').toUpperCase() : line1.split('-')[0].trim().toUpperCase();
 
         let courseName = '';
         if (line1.includes('-')) {
           courseName = line1.substring(line1.indexOf('-') + 1).trim();
         }
 
-        const line2 = lines.find(l => l.includes('Lecture') || l.includes('Lab') || l.includes('Tut') || l.includes('Lec')) || text;
+        const line2 = lines.find(l => l.includes('Lecture') || l.includes('Lab') || l.includes('Tut') || l.includes('Lec')) || '';
         let entryType = 'lecture';
         if (line2.toLowerCase().includes('lab')) entryType = 'lab';
         else if (line2.toLowerCase().includes('tut')) entryType = 'tutorial';
@@ -1858,24 +1840,22 @@ function parseVisualHtmlTable(htmlContent) {
         const classMatch = text.match(/Class No:\s*(\d+)/i) || text.match(/\(Class No:\s*(\d+)\)/i);
         if (classMatch) classNo = classMatch[1];
 
-        let instructor = '';
+        const line3 = lines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د') || l.toLowerCase().includes('dr.')) || '';
+        const instructor = line3.replace('👤', '').trim();
+
+        const line4 = lines.find(l => l.includes('📍') || l.match(/[A-Z0-9]+-[A-Z0-9]+/)) || '';
         let facilityId = '';
         let capacity = '';
-
-        lines.forEach(line => {
-          if (line.includes('👤') || line.startsWith('د.') || line.startsWith('أ.د') || line.toLowerCase().includes('dr.') || line.includes('م.')) {
-            instructor = line.replace('👤', '').trim();
-          } else if (line.includes('📍') || line.match(/[A-Z0-9]+-[A-Z0-9]+/) || line.match(/B\d+/i)) {
-            const facClean = line.replace('📍', '').trim();
-            const capMatch = facClean.match(/\((\d+)\)/);
-            if (capMatch) {
-              capacity = capMatch[1];
-              facilityId = facClean.replace(capMatch[0], '').trim();
-            } else {
-              facilityId = facClean;
-            }
+        if (line4) {
+          const facClean = line4.replace('📍', '').trim();
+          const capMatch = facClean.match(/\((\d+)\)/);
+          if (capMatch) {
+            capacity = capMatch[1];
+            facilityId = facClean.replace(capMatch[0], '').trim();
+          } else {
+            facilityId = facClean;
           }
-        });
+        }
 
         entries.push({
           id: generateId(),
@@ -2042,21 +2022,11 @@ function exportVisualExcel() {
         const isLastGroupInDay = gIdx === groupSubRowsMap.length - 1;
 
         subRows.forEach((slotMap, sIdx) => {
-          const isLastSubRowInGroup = sIdx === subRows.length - 1;
-          const isDayLast = isLastGroupInDay && isLastSubRowInGroup;
-          const isLevelLast = isLastSubRowInGroup;
-
-          const bottomBorderStyle = isDayLast
-            ? 'border-bottom: 4px solid #dc2626 !important;'
-            : isLevelLast
-              ? 'border-bottom: 3.5px solid #000000 !important;'
-              : 'border-bottom: 1px solid #000000;';
-
           tableHtml += `<tr style="height: 60px;">`;
 
           if (isFirstDayRow) {
             const dayColor = DAY_COLORS[day] || DAY_COLORS['Saturday'];
-            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border:1px solid #000000; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle; border-bottom:4px solid #dc2626 !important;">${day.substring(0, 3)}</td>`;
+            tableHtml += `<td rowspan="${totalDaySubRows}" style="width:70px; font-weight:bold; font-size:13px; background-color:${dayColor.bg}; color:${dayColor.textColor}; border:1px solid #000000; border-left:4px solid ${dayColor.accent}; text-align:center; vertical-align:middle;">${day.substring(0, 3)}</td>`;
             isFirstDayRow = false;
           }
 
@@ -2067,7 +2037,7 @@ function exportVisualExcel() {
               ? `<span style="font-weight:bold; color:${prog.textColor}; mso-data-placement:same-cell;">${levelLabel}</span><br/><span style="color:${prog.color}; font-size:9px; font-weight:bold; mso-data-placement:same-cell;">${prog.name}</span>`
               : `<span style="font-weight:bold; color:#334155; mso-data-placement:same-cell;">${levelLabel}</span>`;
 
-            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border:1px solid #000000; border-left:3px solid ${prog.color}; ${isLastGroupInDay ? 'border-bottom:4px solid #dc2626 !important;' : 'border-bottom:3.5px solid #000000 !important;'} mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
+            tableHtml += `<td rowspan="${subRows.length}" style="width:110px; text-align:center; vertical-align:middle; background-color:${prog.bg}; border:1px solid #000000; border-left:3px solid ${prog.color}; mso-data-placement:same-cell; padding:4px;">${levelText}</td>`;
           }
 
           // Slot mapping
@@ -2102,7 +2072,7 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-top:1px solid #000000; border-right:1px solid #000000; border-left: 4px solid ${cellBorder}; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border:1px solid #000000; border-left: 4px solid ${cellBorder}; padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -2122,7 +2092,7 @@ function exportVisualExcel() {
                 const classNoStr = entry.classNo ? ` (Class No: ${entry.classNo})` : '';
 
                 tableHtml += `
-                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border-top:1px solid #000000; border-right:1px solid #000000; border-left: 4px solid ${cellBorder}; ${bottomBorderStyle} padding:4px; mso-data-placement:same-cell;">
+                  <td colspan="${span}" style="background-color:${cellBg}; text-align:center; vertical-align:middle; border:1px solid #000000; border-left: 4px solid ${cellBorder}; padding:4px; mso-data-placement:same-cell;">
                     <span style="font-weight:bold; font-size:11px; display:block; mso-data-placement:same-cell;">
                       <span style="color:#0000ff;">${entry.courseCode}</span><span style="color:#000000;">${entry.courseName ? `-${entry.courseName}` : ''}</span>
                     </span><br/>
@@ -2136,7 +2106,7 @@ function exportVisualExcel() {
               }
               s += span;
             } else {
-              tableHtml += `<td style="background-color:#ffffff; border-top:1px solid #000000; border-right:1px solid #000000; ${bottomBorderStyle}"></td>`;
+              tableHtml += `<td style="background-color:#ffffff; border:1px solid #000000;"></td>`;
               s++;
             }
           }
@@ -2515,28 +2485,6 @@ function showConfirm(message, callback) {
   openModal('modal-confirm');
 }
 
-// ─── Modal Helpers ────────────────────────────────────────────────────────────
-function openModal(modalId) {
-  const modal = document.getElementById(modalId);
-  if (modal) {
-    modal.classList.add('active');
-    document.body.style.overflow = 'hidden';
-  }
-}
-
-function closeModal(modalId) {
-  const modal = document.getElementById(modalId);
-  if (modal) {
-    modal.classList.remove('active');
-    document.body.style.overflow = '';
-  }
-}
-
-function openAuthModal(tab = 'signin') {
-  switchAuthTab(tab);
-  openModal('modal-auth');
-}
-
 // ─── Toast ───────────────────────────────────────────────────────────────────
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
@@ -2622,18 +2570,6 @@ function initEventListeners() {
 
   const btnCloseAuth = document.getElementById('btn-close-auth');
   if (btnCloseAuth) btnCloseAuth.addEventListener('click', () => closeModal('modal-auth'));
-
-  const btnGoogle = document.getElementById('btn-google-auth');
-  if (btnGoogle) btnGoogle.addEventListener('click', signInWithGoogle);
-
-  const authToggleLink = document.getElementById('auth-toggle-link');
-  if (authToggleLink) {
-    authToggleLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      const isRegistering = currentAuthTab === 'register';
-      openAuthModal(isRegistering ? 'signin' : 'register');
-    });
-  }
 
   const btnCloseAdminUsers = document.getElementById('btn-close-admin-users');
   if (btnCloseAdminUsers) btnCloseAdminUsers.addEventListener('click', () => closeModal('modal-admin-users'));
