@@ -142,15 +142,13 @@ function setupRealtimeSyncListeners() {
   // 1. Schedule Data — live sync across all devices
   db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
     const val = snapshot.val();
-    if (val && Array.isArray(val)) {
-      isRemoteSyncUpdate = true;
-      scheduleData = val;
-      localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-      renderGrid();
-      updateStats();
-      isRemoteSyncUpdate = false;
-      console.log('⚡ Live sync: schedule updated from cloud (' + val.length + ' entries)');
-    }
+    isRemoteSyncUpdate = true;
+    scheduleData = (val && Array.isArray(val)) ? val : [];
+    localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+    renderGrid();
+    updateStats();
+    isRemoteSyncUpdate = false;
+    console.log('⚡ Live sync: schedule updated from cloud (' + scheduleData.length + ' entries)');
   }, (err) => console.warn("RTDB schedule listener error:", err));
 
   // 2. Users — live sync across all devices
@@ -2040,14 +2038,114 @@ function importVisualExcelFile(file) {
             else currentProgram = 'general';
           }
 
-          // Check Course Entry cell
-          const courseCodeMatch = txt.match(/([A-Z]{2,4}\s*\d{3})/i);
-          if (courseCodeMatch && !txt.includes('DAY') && !txt.includes('LEVEL') && colTracker >= 2) {
-            const courseCode = courseCodeMatch[1].replace(/\s+/g, '').toUpperCase();
+            // Line 0: Course Code - Course Name
+            const nameMatch = line0.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍(]+)/i);
+            if (nameMatch) {
+              courseName = nameMatch[2]
+                .replace(/\b(Lecture|Lab|Tut|Tutorial)\b/gi, '')
+                .replace(/Class\s*No:.*/gi, '')
+                .trim();
+            }
 
-            // Extract Course Name
-            let courseName = '';
-            const nameMatch = txt.match(/([A-Z]{2,4}\s*\d{3})\s*[-–—:]\s*([^👤📍\n\r(]+)/i);
+            // Calculate start & end minutes from column position
+            let startMin = headerTimes[colTracker];
+            let endMin = headerTimes[colTracker + colSpan - 1];
+
+            if (startMin === null || startMin === undefined) {
+              startMin = 540 + Math.max(0, colTracker - 2) * 15;
+            }
+            if (endMin === null || endMin === undefined) {
+              endMin = startMin + colSpan * 15;
+            }
+
+            const fullCellTxt = td.textContent.replace(/\s+/g, ' ').trim();
+
+            let entryType = 'lecture';
+            let component = 'L1S';
+
+            if (/Lecture/i.test(fullCellTxt) || /Lec\b/i.test(fullCellTxt)) {
+              entryType = 'lecture';
+              const grp = fullCellTxt.match(/\(Group\s*(\d+)\)|Group\s*(\d+)/i);
+              const gNum = grp ? (grp[1] || grp[2]) : '1';
+              component = `L${gNum}S`;
+            } else if (/Lab\b/i.test(fullCellTxt)) {
+              entryType = 'lab';
+              const grp = fullCellTxt.match(/Lab-?\s*([A-Za-z0-9()]+)/i);
+              const gStr = grp ? grp[1] : '1A';
+              component = `Lab-${gStr}`;
+            } else if (/Tut(?:orial)?\b/i.test(fullCellTxt)) {
+              entryType = 'tutorial';
+              const grp = fullCellTxt.match(/Tut-?\s*([A-Za-z0-9()]+)/i);
+              const gStr = grp ? grp[1] : '1A';
+              component = `Tut-${gStr}`;
+            }
+
+            let classNo = '';
+            const classMatch = fullCellTxt.match(/Class No:\s*(\d+)/i);
+            if (classMatch) classNo = classMatch[1];
+
+            let instructor = '';
+            const instLine = cellLines.find(l => l.includes('👤') || l.startsWith('د.') || l.startsWith('أ.د.') || l.startsWith('م.')) || '';
+            if (instLine) {
+              instructor = instLine.replace('👤', '').trim();
+            }
+
+            let facilityId = '';
+            let capacity = '';
+            const facLine = cellLines.find(l => l.includes('📍') || l.startsWith('B') || l.includes('-')) || '';
+            const facMatch = (facLine || fullCellTxt).match(/📍?\s*([A-Z0-9/-]+)\s*(?:\((\d+)\))?/i);
+            if (facMatch && (facMatch[1].includes('-') || facMatch[1].startsWith('B'))) {
+              facilityId = facMatch[1].trim();
+              if (facMatch[2]) capacity = facMatch[2].trim();
+            }
+
+            let association = '1';
+            const assocMatch = component.match(/\d+/);
+            if (assocMatch) association = assocMatch[0];
+
+            importedEntries.push({
+              id: generateId(),
+              day: currentDay,
+              level: currentLevel,
+              program: currentProgram,
+              courseCode: courseCode,
+              courseName: courseName,
+              component: component,
+              entryType: entryType,
+              classNo: classNo,
+              facilityId: facilityId,
+              capacity: capacity,
+              instructor: instructor,
+              startMinutes: startMin,
+              endMinutes: endMin,
+              association: association
+            });
+          }
+
+          colTracker += colSpan;
+        });
+      });
+
+      if (importedEntries.length === 0) {
+        showToast('No valid schedule entries detected in the uploaded file.', 'warning');
+        return;
+      }
+
+      // Deduplicate imported entries by unique key (day, level, courseCode, component, startMinutes)
+      const uniqueMap = new Map();
+      importedEntries.forEach(entry => {
+        const key = `${entry.day}_${entry.level}_${entry.courseCode}_${entry.component}_${entry.startMinutes}`;
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, entry);
+        }
+      });
+      const cleanEntries = Array.from(uniqueMap.values());
+
+      scheduleData = cleanEntries;
+      saveData();
+      renderGrid();
+      logActivity('📥 Imported Visual Excel', `Imported ${cleanEntries.length} schedule entries from Visual Excel Sheet`, '📥');
+      showToast(`Successfully imported ${cleanEntries.length} schedule entries!`, 'success');]+)/i);
             if (nameMatch) {
               courseName = nameMatch[2].trim();
             }
