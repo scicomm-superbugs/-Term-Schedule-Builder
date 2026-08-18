@@ -101,27 +101,75 @@ function initFirebase() {
   }
 }
 
+// ─── Data Sanitizer & Normalizer for LocalStorage and Firebase ───────────────
+function cleanEntryForStorage(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const startMin = (entry.startMinutes !== null && entry.startMinutes !== undefined && !isNaN(entry.startMinutes)) ? Number(entry.startMinutes) : 540;
+  const endMin = (entry.endMinutes !== null && entry.endMinutes !== undefined && !isNaN(entry.endMinutes)) ? Number(entry.endMinutes) : 645;
+  const comp = String(entry.component || 'L1S').trim();
+  const parsed = parseComponent(comp);
+
+  const cleaned = {
+    id: entry.id || generateId(),
+    courseCode: String(entry.courseCode || '').trim(),
+    courseName: String(entry.courseName || '').trim(),
+    component: comp,
+    entryType: entry.entryType || parsed.type || 'lecture',
+    day: capitalizeDay(entry.day || 'Saturday'),
+    level: String(entry.level !== undefined && entry.level !== null ? entry.level : '1'),
+    program: entry.program || 'general',
+    association: String(entry.association || '1'),
+    classNo: String(entry.classNo || '').trim(),
+    facilityId: String(entry.facilityId || '').trim(),
+    instructor: String(entry.instructor || '').trim(),
+    startMinutes: startMin,
+    endMinutes: endMin,
+    capacity: String(entry.capacity || '100')
+  };
+  if (entry.customColor) {
+    cleaned.customColor = String(entry.customColor);
+  }
+  if (entry.notes) {
+    cleaned.notes = String(entry.notes);
+  }
+  return cleaned;
+}
+
+function normalizeScheduleData(val) {
+  if (!val) return [];
+  let rawList = [];
+  if (Array.isArray(val)) {
+    rawList = val;
+  } else if (typeof val === 'object') {
+    rawList = Object.values(val);
+  }
+  return rawList
+    .map(cleanEntryForStorage)
+    .filter(e => e && e.courseCode);
+}
+
 // ─── Fetch Cloud Schedule on Page Load ───────────────────────────────────────
 function fetchCloudScheduleData() {
   if (!db) return;
 
   db.ref('term_schedule/scheduleData').once('value').then((snapshot) => {
     const val = snapshot.val();
-    if (val && Array.isArray(val) && val.length > 0) {
-      console.log('✓ Cloud schedule loaded:', val.length, 'entries');
+    const cloudEntries = normalizeScheduleData(val);
+
+    if (cloudEntries.length > 0) {
+      console.log('✓ Cloud schedule loaded:', cloudEntries.length, 'entries');
       isRemoteSyncUpdate = true;
-      scheduleData = val;
+      scheduleData = cloudEntries;
       localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
       renderGrid();
       updateStats();
       isRemoteSyncUpdate = false;
     } else {
-      console.log('ℹ No cloud schedule data found, uploading local data...');
-      // If cloud is empty but we have local data, push local data to cloud
+      console.log('ℹ No cloud schedule data found on server.');
+      // If cloud is empty but we have local data, push local data to cloud!
       if (scheduleData.length > 0) {
-        db.ref('term_schedule/scheduleData').set(scheduleData)
-          .then(() => console.log('✓ Local data pushed to cloud'))
-          .catch(err => console.warn('Cloud push failed:', err));
+        console.log('Pushing ' + scheduleData.length + ' local entries to cloud...');
+        saveData();
       }
     }
   }).catch(err => console.warn("Cloud fetch notice:", err));
@@ -142,13 +190,25 @@ function setupRealtimeSyncListeners() {
   // 1. Schedule Data — live sync across all devices
   db.ref('term_schedule/scheduleData').on('value', (snapshot) => {
     const val = snapshot.val();
-    isRemoteSyncUpdate = true;
-    scheduleData = (val && Array.isArray(val)) ? val : [];
-    localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
-    renderGrid();
-    updateStats();
-    isRemoteSyncUpdate = false;
-    console.log('⚡ Live sync: schedule updated from cloud (' + scheduleData.length + ' entries)');
+    const cloudEntries = normalizeScheduleData(val);
+
+    // Safeguard: If cloud returns empty, but local has data, do NOT wipe local data! Push local up!
+    if (cloudEntries.length === 0 && scheduleData.length > 0 && !isRemoteSyncUpdate) {
+      console.log('ℹ Cloud empty on listener, pushing local data to cloud...');
+      saveData();
+      return;
+    }
+
+    // Only update if cloud actually has data or if this was an intentional remote clear
+    if (cloudEntries.length > 0 || (val === null && scheduleData.length === 0)) {
+      isRemoteSyncUpdate = true;
+      scheduleData = cloudEntries;
+      localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+      renderGrid();
+      updateStats();
+      isRemoteSyncUpdate = false;
+      console.log('⚡ Live sync: schedule updated from cloud (' + scheduleData.length + ' entries)');
+    }
   }, (err) => console.warn("RTDB schedule listener error:", err));
 
   // 2. Users — live sync across all devices
@@ -171,8 +231,9 @@ function setupRealtimeSyncListeners() {
   // 3. Activity Logs — live sync across all devices
   db.ref('term_schedule/activityLogs').on('value', (snapshot) => {
     const val = snapshot.val();
-    if (val && Array.isArray(val)) {
-      localStorage.setItem('term_sched_activity_logs', JSON.stringify(val));
+    if (val) {
+      const logs = Array.isArray(val) ? val : Object.values(val);
+      localStorage.setItem('term_sched_activity_logs', JSON.stringify(logs));
     }
   }, (err) => console.warn("RTDB logs listener error:", err));
 }
@@ -2036,7 +2097,7 @@ function duplicateAsNewFromEdit() {
     association, classNo, facilityId,
     startMinutes: startMin, endMinutes: endMin,
     day, capacity, instructor, program,
-    customColor: useCustomColor ? customColorVal : undefined
+    ...(useCustomColor && customColorVal ? { customColor: customColorVal } : {})
   };
 
   scheduleData.push(newEntry);
@@ -2910,7 +2971,7 @@ function saveEntry() {
     association, classNo, facilityId,
     startMinutes: startMin, endMinutes: endMin,
     day, capacity, instructor, program,
-    customColor: useCustomColor ? customColorVal : undefined
+    ...(useCustomColor && customColorVal ? { customColor: customColorVal } : {})
   };
 
   const isEdit = !!currentEditId;
@@ -3001,31 +3062,36 @@ function showToast(message, type = 'info') {
 // ─── LocalStorage & Cloud Realtime Sync ───────────────────────────────────────
 function saveData() {
   try {
-    localStorage.setItem('termScheduleData', JSON.stringify(scheduleData));
+    const cleanList = scheduleData.map(cleanEntryForStorage).filter(Boolean);
+    scheduleData = cleanList;
+    localStorage.setItem('termScheduleData', JSON.stringify(cleanList));
+
     if (!isRemoteSyncUpdate && db) {
-      db.ref('term_schedule/scheduleData').set(scheduleData)
-        .then(() => console.log('✓ Schedule synced to cloud'))
-        .catch(err => console.warn('Cloud sync failed:', err));
+      db.ref('term_schedule/scheduleData').set(cleanList)
+        .then(() => console.log('✓ Cloud synced successfully (' + cleanList.length + ' entries)'))
+        .catch(err => {
+          console.error('❌ Cloud sync failed:', err);
+          showToast('⚠️ Cloud sync issue: ' + (err.message || err), 'error');
+        });
     }
+  } catch (e) {
+    console.error('Save failed:', e);
   }
-  catch (e) { console.warn('Save failed:', e); }
 }
 
 function loadData() {
   try {
-    const data = localStorage.getItem('termScheduleData');
-    if (data) {
-      scheduleData = JSON.parse(data);
-      scheduleData.forEach(e => {
-        if (!e.id) e.id = generateId();
-        if (!e.program) e.program = 'general';
-        if (e.instructor) e.instructor = fixMojibake(e.instructor);
-        if (e.courseName) e.courseName = fixMojibake(e.courseName);
-        if (e.courseCode) e.courseCode = fixMojibake(e.courseCode);
-        if (e.facilityId) e.facilityId = fixMojibake(e.facilityId);
-      });
+    const raw = localStorage.getItem('termScheduleData');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      scheduleData = normalizeScheduleData(parsed);
+    } else {
+      scheduleData = [];
     }
-  } catch (e) { scheduleData = []; }
+  } catch (e) {
+    console.warn('Local load failed:', e);
+    scheduleData = [];
+  }
 
   // Immediately attempt cloud fetch so all devices sync to master online schedule!
   if (typeof firebase !== 'undefined') {
