@@ -787,6 +787,7 @@ function parseTimeString(str) {
 }
 
 function minutesToTimeString(mins) {
+  if (mins === null || mins === undefined || isNaN(mins)) return 'TBA';
   const hours = Math.floor(mins / 60);
   const minutes = mins % 60;
   const period = hours >= 12 ? 'PM' : 'AM';
@@ -795,6 +796,7 @@ function minutesToTimeString(mins) {
 }
 
 function minutesTo24h(mins) {
+  if (mins === null || mins === undefined || isNaN(mins)) return '09:00';
   return Math.floor(mins / 60).toString().padStart(2, '0') + ':' + (mins % 60).toString().padStart(2, '0');
 }
 
@@ -1108,6 +1110,12 @@ function renderGrid() {
         const td = document.createElement('td');
         td.className = 'sched-empty';
         if (slot.start % 60 === 0) td.classList.add('on-hour');
+        td.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (copiedEntry) {
+            pasteCopiedEntryToSlot(day, slot.start, 1, 'general');
+          }
+        });
         tr.appendChild(td);
       });
       const tdEnd = document.createElement('td');
@@ -1260,6 +1268,12 @@ function renderGrid() {
               td.className = 'sched-empty';
               const slotTime = i < slots.length ? slots[i].start : timeEnd;
               if (slotTime % 60 === 0) td.classList.add('on-hour');
+              td.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (copiedEntry) {
+                  pasteCopiedEntryToSlot(day, slotTime, group.level, group.program);
+                }
+              });
               tr.appendChild(td);
               i++;
             }
@@ -1444,9 +1458,11 @@ function showEntryPopup(entry, anchorEl) {
       </div>
     </div>
     ${conflictHtml}
-    <div class="entry-popup-actions">
-      <button class="btn btn-sm" onclick="editEntry('${entry.id}')">✏️ Edit</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteEntry('${entry.id}')">🗑️ Delete</button>
+    <div class="entry-popup-actions" style="display:flex; flex-wrap:wrap; gap:6px;">
+      <button class="btn btn-sm" onclick="editEntry('${entry.id}')" title="Edit this entry">✏️ Edit</button>
+      <button class="btn btn-sm btn-primary" onclick="openDuplicateModal('${entry.id}')" title="Duplicate/Clone this session to other times or days">📋 Duplicate</button>
+      <button class="btn btn-sm" onclick="copyEntryToClipboard('${entry.id}')" title="Copy to clipboard for click-to-paste on timetable">📄 Copy</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteEntry('${entry.id}')" title="Delete this entry">🗑️ Delete</button>
       <button class="btn btn-sm" onclick="closeEntryPopup()" style="margin-left:auto;">Close</button>
     </div>
   `;
@@ -1556,6 +1572,9 @@ function editEntry(id) {
     if (document.getElementById('field-custom-color')) document.getElementById('field-custom-color').value = entryType === 'lecture' ? '#95b3d7' : '#da9694';
   }
 
+  const btnDupAsNew = document.getElementById('btn-duplicate-as-new');
+  if (btnDupAsNew) btnDupAsNew.classList.remove('hidden');
+
   openModal('modal-entry');
 }
 
@@ -1572,6 +1591,469 @@ function deleteEntry(id) {
     renderGrid();
     showToast('Entry deleted', 'success');
   });
+}
+
+// ─── Session Clipboard & Quick Click-to-Paste Engine ────────────────────────
+let copiedEntry = null;
+
+function copyEntryToClipboard(id) {
+  closeEntryPopup();
+  const entry = scheduleData.find(e => e.id === id);
+  if (!entry) return;
+
+  copiedEntry = JSON.parse(JSON.stringify(entry));
+  const parsed = parseComponent(copiedEntry.component);
+  const entryType = copiedEntry.entryType || parsed.type;
+  const startMin = (copiedEntry.startMinutes !== null && copiedEntry.startMinutes !== undefined) ? copiedEntry.startMinutes : 540;
+  const endMin = (copiedEntry.endMinutes !== null && copiedEntry.endMinutes !== undefined) ? copiedEntry.endMinutes : 645;
+  const duration = Math.max(15, endMin - startMin);
+
+  const bar = document.getElementById('clipboard-bar');
+  if (bar) {
+    const titleEl = document.getElementById('clipboard-course-title');
+    const tagEl = document.getElementById('clipboard-tag');
+    const durEl = document.getElementById('clipboard-duration');
+    if (titleEl) titleEl.textContent = `${copiedEntry.courseCode} - ${entryType.charAt(0).toUpperCase() + entryType.slice(1)}`;
+    if (tagEl) tagEl.textContent = copiedEntry.component || 'L1S';
+    if (durEl) durEl.textContent = formatDuration(duration);
+    bar.classList.remove('hidden');
+  }
+
+  document.body.classList.add('clipboard-active');
+  showToast(`📋 Copied "${copiedEntry.courseCode}" (${copiedEntry.component})! Click any empty timetable cell to paste.`, 'info');
+}
+
+function clearCopiedEntry() {
+  copiedEntry = null;
+  const bar = document.getElementById('clipboard-bar');
+  if (bar) bar.classList.add('hidden');
+  document.body.classList.remove('clipboard-active');
+  showToast('Clipboard cleared', 'info');
+}
+
+function pasteCopiedEntryToSlot(day, startMinutes, level, program) {
+  if (!copiedEntry) return;
+  if (!requireAuth('paste or duplicate schedule entries')) return;
+
+  const startMin = (copiedEntry.startMinutes !== null && copiedEntry.startMinutes !== undefined) ? copiedEntry.startMinutes : 540;
+  const endMin = (copiedEntry.endMinutes !== null && copiedEntry.endMinutes !== undefined) ? copiedEntry.endMinutes : 645;
+  const duration = Math.max(15, endMin - startMin);
+  const newEndMinutes = startMinutes + duration;
+
+  const newEntry = {
+    ...copiedEntry,
+    id: generateId(),
+    day: day,
+    startMinutes: startMinutes,
+    endMinutes: newEndMinutes,
+    level: level !== undefined && level !== null ? String(level) : copiedEntry.level,
+    program: program || copiedEntry.program || 'general'
+  };
+
+  scheduleData.push(newEntry);
+  saveData();
+  renderGrid();
+
+  logActivity('📋 Pasted Duplicate Entry', `Pasted ${newEntry.courseCode} (${newEntry.component}) on ${newEntry.day} at ${minutesToTimeString(newEntry.startMinutes)}-${minutesToTimeString(newEntry.endMinutes)}`, '📋');
+
+  const conflicts = getConflictsForEntry(newEntry, scheduleData);
+  if (conflicts.length > 0) {
+    showToast(`📋 Duplicated "${newEntry.courseCode}" to ${newEntry.day} ${minutesToTimeString(newEntry.startMinutes)}! ⚠️ ${conflicts.length} conflict(s) detected`, 'error');
+  } else {
+    showToast(`📋 Duplicated "${newEntry.courseCode}" to ${newEntry.day} at ${minutesToTimeString(newEntry.startMinutes)}!`, 'success');
+  }
+}
+
+// ─── Duplicate Modal & Session Cloning Engine ───────────────────────────────
+let sourceDuplicateEntry = null;
+let dupSelectedType = 'lecture';
+let dupSelectedSubGroup = 'A';
+let dupCurrentDuration = 105; // default in minutes
+
+function formatDuration(mins) {
+  if (!mins || isNaN(mins) || mins <= 0) return '0m';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+function openDuplicateModal(id) {
+  closeEntryPopup();
+  if (!requireAuth('duplicate schedule entries')) return;
+
+  const entry = scheduleData.find(e => e.id === id);
+  if (!entry) return;
+
+  sourceDuplicateEntry = entry;
+  const parsed = parseComponent(entry.component);
+  const entryType = entry.entryType || parsed.type;
+
+  // Set preview card
+  const sourceCodeEl = document.getElementById('dup-source-code');
+  const sourceNameEl = document.getElementById('dup-source-name');
+  const sourceBadgeEl = document.getElementById('dup-source-badge');
+  const sourceMetaEl = document.getElementById('dup-source-meta');
+
+  if (sourceCodeEl) sourceCodeEl.textContent = entry.courseCode || '';
+  if (sourceNameEl) sourceNameEl.textContent = entry.courseName || '';
+  if (sourceBadgeEl) {
+    sourceBadgeEl.textContent = entryType.toUpperCase();
+    sourceBadgeEl.className = `dup-source-badge ${entryType}`;
+  }
+  if (sourceMetaEl) {
+    sourceMetaEl.innerHTML = `
+      <span>📅 ${entry.day || '—'}</span>
+      <span>🕐 ${minutesToTimeString(entry.startMinutes)} - ${minutesToTimeString(entry.endMinutes)}</span>
+      <span>📍 ${entry.facilityId || '—'}</span>
+      <span>👤 ${entry.instructor || '—'}</span>
+    `;
+  }
+
+  // Reset Day Mode
+  const radioSingle = document.getElementById('dup-mode-single');
+  if (radioSingle) radioSingle.checked = true;
+  switchDupDayMode('single');
+
+  const fieldDay = document.getElementById('dup-field-day');
+  if (fieldDay) fieldDay.value = entry.day || 'Saturday';
+
+  // Uncheck all multi-day chips except source day
+  document.querySelectorAll('#dup-days-chips input[type="checkbox"]').forEach(cb => {
+    cb.checked = cb.value.toLowerCase() === (entry.day || '').toLowerCase();
+  });
+
+  // Times & Duration
+  const startMin = (entry.startMinutes !== null && entry.startMinutes !== undefined) ? entry.startMinutes : 540;
+  const endMin = (entry.endMinutes !== null && entry.endMinutes !== undefined) ? entry.endMinutes : 645;
+  dupCurrentDuration = Math.max(15, endMin - startMin);
+
+  const startInput = document.getElementById('dup-field-start-time');
+  const endInput = document.getElementById('dup-field-end-time');
+  if (startInput) startInput.value = minutesTo24h(startMin);
+  if (endInput) endInput.value = minutesTo24h(endMin);
+
+  updateDupDurationBadge();
+  const keepDurationCb = document.getElementById('dup-keep-duration');
+  if (keepDurationCb) keepDurationCb.checked = true;
+
+  // Type & Group
+  dupSetEntryType(entryType);
+  if (entryType === 'lecture') {
+    const lgInput = document.getElementById('dup-field-lecture-group');
+    if (lgInput) lgInput.value = parsed.group || 1;
+  } else {
+    const groupStr = String(parsed.group);
+    const parentGroup = parseInt(groupStr) || 1;
+    const subGroup = groupStr.endsWith('B') ? 'B' : 'A';
+    const pgInput = document.getElementById('dup-field-parent-group');
+    if (pgInput) pgInput.value = parentGroup;
+    dupSetSubGroup(subGroup);
+  }
+
+  // Facilities, Level, Program, Instructor, Assoc, ClassNo
+  const fac = entry.facilityId || '';
+  if (fac.includes('/')) {
+    const parts = fac.split('/');
+    if (document.getElementById('dup-field-facility')) document.getElementById('dup-field-facility').value = parts[0].trim();
+    if (document.getElementById('dup-field-facility-tut')) document.getElementById('dup-field-facility-tut').value = parts[1] ? parts[1].trim() : '';
+  } else {
+    if (document.getElementById('dup-field-facility')) document.getElementById('dup-field-facility').value = fac;
+    if (document.getElementById('dup-field-facility-tut')) document.getElementById('dup-field-facility-tut').value = '';
+  }
+
+  if (document.getElementById('dup-field-level')) document.getElementById('dup-field-level').value = entry.level || 1;
+  if (document.getElementById('dup-field-program')) document.getElementById('dup-field-program').value = entry.program || 'general';
+  if (document.getElementById('dup-field-instructor')) document.getElementById('dup-field-instructor').value = entry.instructor || '';
+  if (document.getElementById('dup-field-association')) document.getElementById('dup-field-association').value = entry.association || 1;
+  if (document.getElementById('dup-field-class-no')) document.getElementById('dup-field-class-no').value = entry.classNo || '';
+
+  dupUpdateComponentPreview();
+  updateDupConfirmButtonText();
+  openModal('modal-duplicate');
+}
+
+function switchDupDayMode(mode) {
+  const singleWrap = document.getElementById('dup-single-day-wrap');
+  const multiWrap = document.getElementById('dup-multi-days-wrap');
+  if (singleWrap) singleWrap.classList.toggle('hidden', mode === 'multi');
+  if (multiWrap) multiWrap.classList.toggle('hidden', mode === 'single');
+  updateDupConfirmButtonText();
+}
+
+function updateDupConfirmButtonText() {
+  const btnConfirm = document.getElementById('btn-confirm-duplicate');
+  if (!btnConfirm) return;
+  const isMulti = document.getElementById('dup-mode-multi') && document.getElementById('dup-mode-multi').checked;
+  if (isMulti) {
+    const selectedCount = document.querySelectorAll('#dup-days-chips input[type="checkbox"]:checked').length;
+    btnConfirm.innerHTML = `<span>📋</span> Duplicate to (${selectedCount}) Selected Day${selectedCount === 1 ? '' : 's'}`;
+  } else {
+    btnConfirm.innerHTML = `<span>📋</span> Duplicate Entry`;
+  }
+}
+
+function dupSetEntryType(type) {
+  dupSelectedType = type;
+  document.querySelectorAll('#dup-type-selector .type-option').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === type);
+  });
+  const l = document.getElementById('dup-group-lecture-wrap');
+  const p = document.getElementById('dup-group-parent-wrap');
+  const s = document.getElementById('dup-group-sub-wrap');
+  const labFac = document.getElementById('dup-label-facility');
+  const labTut = document.getElementById('dup-label-facility-tut');
+
+  if (type === 'lecture') { 
+    if (l) l.classList.remove('hidden'); 
+    if (p) p.classList.add('hidden'); 
+    if (s) s.classList.add('hidden'); 
+    if (labFac) labFac.textContent = 'Facility ID (Lecture Hall)';
+    if (labTut) labTut.textContent = 'Secondary Room (Optional)';
+  } else { 
+    if (l) l.classList.add('hidden'); 
+    if (p) p.classList.remove('hidden'); 
+    if (s) s.classList.remove('hidden'); 
+    if (labFac) labFac.textContent = 'Lab Room (Facility ID)';
+    if (labTut) labTut.textContent = 'Tutorial Room (Optional)';
+  }
+  dupUpdateComponentPreview();
+}
+
+function dupSetSubGroup(sub) {
+  dupSelectedSubGroup = sub;
+  document.querySelectorAll('#dup-sub-group-selector .sub-group-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.sub === sub);
+  });
+  dupUpdateComponentPreview();
+}
+
+function dupUpdateComponentPreview() {
+  const lgEl = document.getElementById('dup-field-lecture-group');
+  const pgEl = document.getElementById('dup-field-parent-group');
+  const lg = parseInt(lgEl ? lgEl.value : '1') || 1;
+  const pg = parseInt(pgEl ? pgEl.value : '1') || 1;
+  let code, label;
+  if (dupSelectedType === 'lecture') {
+    code = buildComponentCode('lecture', lg);
+    label = `→ Lecture Group ${lg}`;
+  } else {
+    code = buildComponentCode(dupSelectedType, null, pg, dupSelectedSubGroup);
+    const tn = dupSelectedType === 'tutorial' ? 'Tutorial' : 'Lab';
+    label = `→ ${tn} Group ${pg}${dupSelectedSubGroup}`;
+  }
+  const codeEl = document.getElementById('dup-component-preview-code');
+  const labelEl = document.getElementById('dup-component-preview-label');
+  if (codeEl) codeEl.textContent = code;
+  if (labelEl) labelEl.textContent = label;
+
+  const assocEl = document.getElementById('dup-field-association');
+  if (assocEl) assocEl.value = dupSelectedType === 'lecture' ? lg : pg;
+}
+
+function updateDupDurationBadge() {
+  const startInput = document.getElementById('dup-field-start-time');
+  const endInput = document.getElementById('dup-field-end-time');
+  if (!startInput || !endInput) return;
+
+  const startMin = time24ToMinutes(startInput.value);
+  const endMin = time24ToMinutes(endInput.value);
+  const dur = endMin - startMin;
+
+  const badge = document.getElementById('dup-duration-badge');
+  const text = document.getElementById('dup-duration-text');
+  if (dur > 0) {
+    dupCurrentDuration = dur;
+    const durStr = formatDuration(dur);
+    if (badge) badge.textContent = durStr;
+    if (text) text.textContent = durStr;
+  }
+}
+
+function shiftDupTimes(deltaMins) {
+  const startInput = document.getElementById('dup-field-start-time');
+  const endInput = document.getElementById('dup-field-end-time');
+  if (!startInput || !endInput) return;
+
+  let startMin = time24ToMinutes(startInput.value) + deltaMins;
+  let endMin = time24ToMinutes(endInput.value) + deltaMins;
+
+  // Clamp within 06:00 to 22:00
+  if (startMin < 360) {
+    const diff = 360 - startMin;
+    startMin += diff;
+    endMin += diff;
+  }
+  if (endMin > 22 * 60) {
+    const diff = endMin - 22 * 60;
+    startMin -= diff;
+    endMin -= diff;
+  }
+
+  startInput.value = minutesTo24h(startMin);
+  endInput.value = minutesTo24h(endMin);
+  updateDupDurationBadge();
+}
+
+function executeDuplicateEntry() {
+  if (!sourceDuplicateEntry) return;
+
+  const isMulti = document.getElementById('dup-mode-multi') && document.getElementById('dup-mode-multi').checked;
+  let targetDays = [];
+  if (isMulti) {
+    document.querySelectorAll('#dup-days-chips input[type="checkbox"]:checked').forEach(cb => {
+      targetDays.push(cb.value);
+    });
+    if (targetDays.length === 0) {
+      showToast('Please select at least one day for duplication', 'error');
+      return;
+    }
+  } else {
+    const day = document.getElementById('dup-field-day').value;
+    targetDays = [day];
+  }
+
+  const startTime = document.getElementById('dup-field-start-time').value;
+  const endTime = document.getElementById('dup-field-end-time').value;
+  if (!startTime || !endTime) {
+    showToast('Start and end times are required', 'error');
+    return;
+  }
+
+  const startMin = time24ToMinutes(startTime);
+  const endMin = time24ToMinutes(endTime);
+  if (endMin <= startMin) {
+    showToast('End time must be after start time', 'error');
+    return;
+  }
+
+  const lg = parseInt(document.getElementById('dup-field-lecture-group').value) || 1;
+  const pg = parseInt(document.getElementById('dup-field-parent-group').value) || 1;
+  const component = dupSelectedType === 'lecture'
+    ? buildComponentCode('lecture', lg)
+    : buildComponentCode(dupSelectedType, null, pg, dupSelectedSubGroup);
+
+  const level = document.getElementById('dup-field-level').value;
+  const program = document.getElementById('dup-field-program').value;
+  const association = document.getElementById('dup-field-association').value;
+  const classNo = document.getElementById('dup-field-class-no').value.trim();
+
+  const primaryFacility = document.getElementById('dup-field-facility').value.trim();
+  const tutFacility = document.getElementById('dup-field-facility-tut').value.trim();
+  const facilityId = tutFacility ? `${primaryFacility}/${tutFacility}` : primaryFacility;
+  const instructor = document.getElementById('dup-field-instructor').value.trim();
+
+  const newEntries = [];
+  targetDays.forEach(d => {
+    const entry = {
+      ...sourceDuplicateEntry,
+      id: generateId(),
+      day: d,
+      level,
+      program,
+      component,
+      entryType: dupSelectedType,
+      facilityId: facilityId || sourceDuplicateEntry.facilityId,
+      instructor: instructor || sourceDuplicateEntry.instructor,
+      startMinutes: startMin,
+      endMinutes: endMin,
+      association,
+      classNo
+    };
+    newEntries.push(entry);
+    scheduleData.push(entry);
+  });
+
+  saveData();
+  renderGrid();
+
+  const dayListStr = targetDays.join(', ');
+  logActivity('📋 Duplicated Entry', `Duplicated ${sourceDuplicateEntry.courseCode} (${component}) to ${dayListStr} at ${minutesToTimeString(startMin)}-${minutesToTimeString(endMin)}`, '📋');
+
+  closeModal('modal-duplicate');
+
+  // Check conflicts across newly created entries
+  let totalConflicts = 0;
+  newEntries.forEach(ne => {
+    const c = getConflictsForEntry(ne, scheduleData);
+    totalConflicts += c.length;
+  });
+
+  if (totalConflicts > 0) {
+    showToast(`Duplicated ${newEntries.length} session(s) successfully! ⚠️ ${totalConflicts} conflict(s) detected`, 'error');
+  } else {
+    showToast(`Duplicated ${newEntries.length} session(s) successfully to ${dayListStr}!`, 'success');
+  }
+}
+
+function duplicateAsNewFromEdit() {
+  const courseCode = document.getElementById('field-course-code').value.trim();
+  const courseName = document.getElementById('field-course-name').value.trim();
+  const level = document.getElementById('field-level').value;
+  const program = document.getElementById('field-program').value;
+  const association = document.getElementById('field-association').value;
+  const classNo = document.getElementById('field-class-no').value.trim();
+  const day = document.getElementById('field-day').value;
+
+  const primaryFacility = document.getElementById('field-facility').value.trim();
+  const tutFacility = document.getElementById('field-facility-tut').value.trim();
+  const facilityId = tutFacility ? `${primaryFacility}/${tutFacility}` : primaryFacility;
+
+  const startTime = document.getElementById('field-start-time').value;
+  const endTime = document.getElementById('field-end-time').value;
+  const capacity = document.getElementById('field-capacity').value;
+
+  const instInputs = document.querySelectorAll('#instructors-container .instructor-field');
+  const instList = [];
+  instInputs.forEach(inp => {
+    const val = inp.value.trim();
+    if (val) instList.push(val);
+  });
+  const instructor = instList.join(' + ');
+
+  if (!courseCode) { showToast('Course code is required', 'error'); return; }
+  if (!courseName) { showToast('Course name is required', 'error'); return; }
+  if (!startTime || !endTime) { showToast('Start and end times are required', 'error'); return; }
+
+  const startMin = time24ToMinutes(startTime);
+  const endMin = time24ToMinutes(endTime);
+  if (endMin <= startMin) { showToast('End time must be after start time', 'error'); return; }
+
+  const lg = parseInt(document.getElementById('field-lecture-group').value) || 1;
+  const pg = parseInt(document.getElementById('field-parent-group').value) || 1;
+  const component = selectedType === 'lecture'
+    ? buildComponentCode('lecture', lg)
+    : buildComponentCode(selectedType, null, pg, selectedSubGroup);
+
+  const useCustomColor = document.getElementById('field-use-custom-color') ? document.getElementById('field-use-custom-color').checked : false;
+  const customColorVal = document.getElementById('field-custom-color') ? document.getElementById('field-custom-color').value : null;
+
+  const newEntry = {
+    id: generateId(),
+    level, courseCode, courseName, component,
+    entryType: selectedType,
+    association, classNo, facilityId,
+    startMinutes: startMin, endMinutes: endMin,
+    day, capacity, instructor, program,
+    customColor: useCustomColor ? customColorVal : undefined
+  };
+
+  scheduleData.push(newEntry);
+  saveData();
+  renderGrid();
+
+  logActivity('📋 Duplicated As New', `${newEntry.courseCode} (${newEntry.component}) on ${newEntry.day} at ${minutesToTimeString(newEntry.startMinutes)}-${minutesToTimeString(newEntry.endMinutes)}`, '📋');
+
+  closeModal('modal-entry');
+  resetEntryForm();
+
+  const conflicts = getConflictsForEntry(newEntry, scheduleData);
+  if (conflicts.length > 0) {
+    showToast(`Duplicated as new entry! ⚠️ ${conflicts.length} conflict(s) detected`, 'error');
+  } else {
+    showToast('Duplicated as new schedule entry!', 'success');
+  }
 }
 
 // ─── CSV Parser ──────────────────────────────────────────────────────────────
@@ -2474,6 +2956,8 @@ function resetEntryForm() {
   document.getElementById('field-program').value = 'general';
   document.getElementById('field-association').value = 1;
   document.getElementById('field-capacity').value = 100;
+  const btnDupAsNew = document.getElementById('btn-duplicate-as-new');
+  if (btnDupAsNew) btnDupAsNew.classList.add('hidden');
   updateComponentPreview();
 }
 
@@ -2640,6 +3124,134 @@ function initEventListeners() {
   document.getElementById('btn-close-entry').addEventListener('click', () => closeModal('modal-entry'));
   document.getElementById('btn-cancel-entry').addEventListener('click', () => closeModal('modal-entry'));
   document.getElementById('btn-save-entry').addEventListener('click', saveEntry);
+
+  const btnDupAsNew = document.getElementById('btn-duplicate-as-new');
+  if (btnDupAsNew) {
+    btnDupAsNew.addEventListener('click', duplicateAsNewFromEdit);
+  }
+
+  // Duplicate Modal Events
+  const btnCloseDup = document.getElementById('btn-close-duplicate');
+  if (btnCloseDup) btnCloseDup.addEventListener('click', () => closeModal('modal-duplicate'));
+
+  const btnCancelDup = document.getElementById('btn-cancel-duplicate');
+  if (btnCancelDup) btnCancelDup.addEventListener('click', () => closeModal('modal-duplicate'));
+
+  const btnConfirmDup = document.getElementById('btn-confirm-duplicate');
+  if (btnConfirmDup) btnConfirmDup.addEventListener('click', executeDuplicateEntry);
+
+  // Day mode toggles
+  const dupModeSingle = document.getElementById('dup-mode-single');
+  const dupModeMulti = document.getElementById('dup-mode-multi');
+  if (dupModeSingle) dupModeSingle.addEventListener('change', () => switchDupDayMode('single'));
+  if (dupModeMulti) dupModeMulti.addEventListener('change', () => switchDupDayMode('multi'));
+
+  document.querySelectorAll('#dup-days-chips input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', updateDupConfirmButtonText);
+  });
+
+  // Duplicate time fields & duration locking
+  const dupStartTime = document.getElementById('dup-field-start-time');
+  const dupEndTime = document.getElementById('dup-field-end-time');
+  const dupKeepDur = document.getElementById('dup-keep-duration');
+
+  if (dupStartTime) {
+    dupStartTime.addEventListener('input', () => {
+      if (dupKeepDur && dupKeepDur.checked) {
+        const startMin = time24ToMinutes(dupStartTime.value);
+        const newEnd = startMin + dupCurrentDuration;
+        if (newEnd < 24 * 60 && dupEndTime) {
+          dupEndTime.value = minutesTo24h(newEnd);
+        }
+      }
+      updateDupDurationBadge();
+    });
+  }
+
+  if (dupEndTime) {
+    dupEndTime.addEventListener('input', () => {
+      updateDupDurationBadge();
+    });
+  }
+
+  // Duplicate Quick Time Shift Buttons
+  const btnShiftMinus = document.getElementById('btn-dup-shift-minus');
+  if (btnShiftMinus) btnShiftMinus.addEventListener('click', () => shiftDupTimes(-15));
+
+  const btnShiftPlus = document.getElementById('btn-dup-shift-plus');
+  if (btnShiftPlus) btnShiftPlus.addEventListener('click', () => shiftDupTimes(15));
+
+  const btnShiftNext = document.getElementById('btn-dup-shift-next');
+  if (btnShiftNext) {
+    btnShiftNext.addEventListener('click', () => {
+      if (!sourceDuplicateEntry) return;
+      const endMin = (sourceDuplicateEntry.endMinutes !== null && sourceDuplicateEntry.endMinutes !== undefined) ? sourceDuplicateEntry.endMinutes : 600;
+      if (dupStartTime) dupStartTime.value = minutesTo24h(endMin);
+      if (dupEndTime) dupEndTime.value = minutesTo24h(endMin + dupCurrentDuration);
+      updateDupDurationBadge();
+    });
+  }
+
+  // Duplicate Increment Group Buttons
+  const btnIncLec = document.getElementById('btn-dup-inc-lec-group');
+  if (btnIncLec) {
+    btnIncLec.addEventListener('click', () => {
+      const inp = document.getElementById('dup-field-lecture-group');
+      if (inp) {
+        inp.value = (parseInt(inp.value, 10) || 1) + 1;
+        dupUpdateComponentPreview();
+      }
+    });
+  }
+
+  const btnIncParent = document.getElementById('btn-dup-inc-parent-group');
+  if (btnIncParent) {
+    btnIncParent.addEventListener('click', () => {
+      const inp = document.getElementById('dup-field-parent-group');
+      if (inp) {
+        inp.value = (parseInt(inp.value, 10) || 1) + 1;
+        dupUpdateComponentPreview();
+      }
+    });
+  }
+
+  // Duplicate Type / Subgroup / Input listeners
+  document.querySelectorAll('#dup-type-selector .type-option').forEach(btn => {
+    btn.addEventListener('click', () => dupSetEntryType(btn.dataset.type));
+  });
+
+  document.querySelectorAll('#dup-sub-group-selector .sub-group-btn').forEach(btn => {
+    btn.addEventListener('click', () => dupSetSubGroup(btn.dataset.sub));
+  });
+
+  const dupLecGrpInp = document.getElementById('dup-field-lecture-group');
+  if (dupLecGrpInp) dupLecGrpInp.addEventListener('input', dupUpdateComponentPreview);
+
+  const dupParentGrpInp = document.getElementById('dup-field-parent-group');
+  if (dupParentGrpInp) dupParentGrpInp.addEventListener('input', dupUpdateComponentPreview);
+
+  // Floating Clipboard Action Bar Buttons
+  const btnClipDup = document.getElementById('btn-clipboard-duplicate');
+  if (btnClipDup) {
+    btnClipDup.addEventListener('click', () => {
+      if (copiedEntry) openDuplicateModal(copiedEntry.id);
+    });
+  }
+
+  const btnClipClear = document.getElementById('btn-clipboard-clear');
+  if (btnClipClear) {
+    btnClipClear.addEventListener('click', clearCopiedEntry);
+  }
+
+  // Close entry popup on click outside
+  document.addEventListener('click', (e) => {
+    const popup = document.getElementById('entry-popup');
+    if (popup && !popup.classList.contains('hidden')) {
+      if (!popup.contains(e.target) && !e.target.closest('.sched-entry-cell') && !e.target.closest('.unscheduled-card')) {
+        closeEntryPopup();
+      }
+    }
+  });
 
   // Dynamic Instructor Add Button
   const btnAddInst = document.getElementById('btn-add-instructor');

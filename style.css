@@ -1453,3 +1453,258 @@ body {
 /* ── Utility ────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DUPLICATE MODAL & SESSION CLONING STYLES
+   ══════════════════════════════════════════════════════════════════════════ */
+.duplicate-source-card {
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-left: 4px solid var(--accent-blue);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.dup-source-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.dup-source-code {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1e3a8a;
+  background: #dbeafe;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.dup-source-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1e293b;
+  flex: 1;
+}
+
+.dup-source-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dup-source-badge.lecture { background: var(--lecture-bg); color: var(--lecture-text); }
+.dup-source-badge.lab { background: var(--lab-bg); color: var(--lab-text); }
+.dup-source-badge.tutorial { background: var(--tutorial-bg); color: var(--tutorial-text); }
+
+.dup-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.74rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+/* Day Mode Selector */
+.dup-day-mode-toggle {
+  display: flex;
+  gap: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.dup-day-mode-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Multi-Day Chips */
+.dup-days-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.dup-day-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border-light);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  user-select: none;
+}
+
+.dup-day-chip input {
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+.dup-day-chip:has(input:checked) {
+  background: #dbeafe;
+  border-color: #2563eb;
+  color: #1e40af;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.15);
+}
+
+/* Duration badge & time tools */
+.dup-duration-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.dup-time-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f1f5f9;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dup-lock-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+}
+
+.dup-shift-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FLOATING CLIPBOARD ACTION BAR
+   ══════════════════════════════════════════════════════════════════════════ */
+.clipboard-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  background: #ffffff;
+  border: 2px solid #3b82f6;
+  border-radius: 40px;
+  box-shadow: 0 12px 32px rgba(37, 99, 235, 0.25), 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 8px 18px;
+  animation: slideUp 200ms ease;
+  max-width: 90vw;
+}
+
+.clipboard-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.clipboard-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.clipboard-icon {
+  font-size: 1.4rem;
+}
+
+.clipboard-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.clipboard-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: #e2e8f0;
+  color: #334155;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.clipboard-duration {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.clipboard-hint {
+  font-size: 0.7rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.clipboard-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PASTE TARGET HIGHLIGHT ON EMPTY CELLS
+   ══════════════════════════════════════════════════════════════════════════ */
+body.clipboard-active .sched-empty {
+  cursor: pointer !important;
+  transition: background-color 150ms ease, border 150ms ease;
+  position: relative;
+}
+
+body.clipboard-active .sched-empty:hover {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  outline: 2px dashed #2563eb !important;
+  outline-offset: -2px;
+}
+
+body.clipboard-active .sched-empty:hover::after {
+  content: '📋 Paste Here';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #1e3a8a;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
