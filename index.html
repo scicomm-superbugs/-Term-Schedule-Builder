@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="style.css?v=27.0" />
+  <link rel="stylesheet" href="style.css?v=28.0" />
 </head>
 <body>
   <div class="app">
@@ -689,12 +689,19 @@
               <input class="form-input" type="text" id="dup-field-instructor" placeholder="e.g. Prof. Dr. Mohammed Salem + Dr. Ahmed Soffar" />
             </div>
 
-            <!-- Association & Class No -->
+            <!-- Capacity & Association -->
+            <div class="form-group">
+              <label class="form-label" for="dup-field-capacity">Capacity</label>
+              <input class="form-input" type="number" id="dup-field-capacity" min="1" max="1000" value="100" />
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="dup-field-association">Association</label>
               <input class="form-input" type="number" id="dup-field-association" min="1" max="99" value="1" />
             </div>
-            <div class="form-group">
+
+            <!-- Class No -->
+            <div class="form-group full-width">
               <label class="form-label" for="dup-field-class-no">Class No (Optional)</label>
               <input class="form-input" type="text" id="dup-field-class-no" placeholder="e.g. 1117" />
             </div>
@@ -745,6 +752,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-  <script src="app.js?v=27.0"></script>
+  <script src="app.js?v=28.0"></script>
 </body>
 </html>

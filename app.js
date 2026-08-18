@@ -1826,6 +1826,7 @@ function openDuplicateModal(id) {
 
   if (document.getElementById('dup-field-level')) document.getElementById('dup-field-level').value = entry.level || 1;
   if (document.getElementById('dup-field-program')) document.getElementById('dup-field-program').value = entry.program || 'general';
+  if (document.getElementById('dup-field-capacity')) document.getElementById('dup-field-capacity').value = entry.capacity || 100;
   if (document.getElementById('dup-field-instructor')) document.getElementById('dup-field-instructor').value = entry.instructor || '';
   if (document.getElementById('dup-field-association')) document.getElementById('dup-field-association').value = entry.association || 1;
   if (document.getElementById('dup-field-class-no')) document.getElementById('dup-field-class-no').value = entry.classNo || '';
@@ -1997,6 +1998,7 @@ function executeDuplicateEntry() {
 
   const level = document.getElementById('dup-field-level').value;
   const program = document.getElementById('dup-field-program').value;
+  const capacity = document.getElementById('dup-field-capacity') ? document.getElementById('dup-field-capacity').value : (sourceDuplicateEntry.capacity || '100');
   const association = document.getElementById('dup-field-association').value;
   const classNo = document.getElementById('dup-field-class-no').value.trim();
 
@@ -2013,6 +2015,7 @@ function executeDuplicateEntry() {
       day: d,
       level,
       program,
+      capacity: String(capacity || sourceDuplicateEntry.capacity || '100'),
       component,
       entryType: dupSelectedType,
       facilityId: facilityId || sourceDuplicateEntry.facilityId,
